@@ -3,12 +3,12 @@ import React, { useEffect, useState } from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeColors } from '@/hooks/useThemeColors';
 import { supabase } from '@/lib/supabase';
+import ThemeToggle from '@/components/ThemeToggle';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const colors = useThemeColors();
   const [checking, setChecking] = useState(true);
   const [loggedIn, setLoggedIn] = useState(false);
 
@@ -29,16 +29,30 @@ export default function TabLayout() {
   }, []);
 
   if (!checking && !loggedIn) {
-    return <Redirect href="/" />;
+    return <Redirect href="/auth/login" />;
   }
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
+        tabBarActiveTintColor: colors.tint,
+        tabBarStyle: { backgroundColor: colors.background, borderTopColor: colors.icon + '22' },
+        headerStyle: { backgroundColor: colors.background },
+        headerTitleStyle: { color: colors.text },
+        headerRight: () => (
+          <ThemeToggle />
+        ),
+        headerRightContainerStyle: { paddingRight: 12 },
+        headerShown: true,
         tabBarButton: HapticTab,
       }}>
+      <Tabs.Screen
+        name="map"
+        options={{
+          title: 'Map',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="map.fill" color={color} />,
+        }}
+      />
       <Tabs.Screen
         name="index"
         options={{

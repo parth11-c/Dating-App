@@ -1,16 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Link, Redirect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import SafeAreaWrapper from '../components/SafeAreaWrapper';
 import { fontSizes, buttonDimensions, shadows, responsiveValue } from '../lib/responsive';
-import { useThemeColors } from '@/hooks/useThemeColors';
 // Defer Supabase import to runtime to avoid SSR/bundler issues
 
 export default function WelcomePage() {
   const [checking, setChecking] = useState(true);
   const [loggedIn, setLoggedIn] = useState(false);
-  const colors = useThemeColors();
 
   useEffect(() => {
     let mounted = true;
@@ -38,45 +36,36 @@ export default function WelcomePage() {
   }
 
   return (
-    <SafeAreaWrapper style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style={colors.mode === 'dark' ? 'light' : 'dark'} />
+    <SafeAreaWrapper style={styles.container}>
+      <StatusBar style="light" />
       <View style={styles.background}>
-        {/* Decorative background blobs */}
-        <View style={[styles.blob, styles.blobTopRight]} />
-        <View style={[styles.blob, styles.blobBottomLeft]} />
-
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.content}>
-            <View style={styles.header}>
-              <Text style={[styles.logo, { color: colors.text }]}>ClgMart</Text>
-              <Text style={[styles.tagline, { color: colors.icon }]}>College Marketplace</Text>
-            </View>
-
-            <View style={styles.descriptionContainer}>
-              <Text style={[styles.description, { color: colors.icon }] }>
-                Buy, sell, and trade with your college community
-              </Text>
-            </View>
-
-            <View style={styles.buttonContainer}>
-              <Link href="/auth/signup" asChild>
-                <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.text }]}>
-                  <Text style={[styles.primaryButtonText, { color: colors.background }]}>Get Started</Text>
-                </TouchableOpacity>
-              </Link>
-
-              <Text style={[styles.loginPrompt, { color: colors.icon }]}>
-                Already have an account?{' '}
-                <Link href="/auth/login" asChild>
-                  <Text style={[styles.loginLink, { color: colors.text }]}>Sign In</Text>
-                </Link>
-              </Text>
-            </View>
+        <View style={styles.content}>
+          <View style={styles.header}>
+            <Text style={styles.logo}>ClgMart</Text>
+            <Text style={styles.tagline}>College Marketplace</Text>
           </View>
-        </ScrollView>
+
+          <View style={styles.descriptionContainer}>
+            <Text style={styles.description}>
+              Buy, sell, and trade with your college community
+            </Text>
+          </View>
+
+          <View style={styles.buttonContainer}>
+            <Link href="/auth/signup" asChild>
+              <TouchableOpacity style={styles.primaryButton}>
+                <Text style={styles.primaryButtonText}>Get Started</Text>
+              </TouchableOpacity>
+            </Link>
+
+            <Text style={styles.loginPrompt}>
+              Already have an account?{' '}
+              <Link href="/auth/login" asChild>
+                <Text style={styles.loginLink}>Sign In</Text>
+              </Link>
+            </Text>
+          </View>
+        </View>
       </View>
     </SafeAreaWrapper>
   );
@@ -93,11 +82,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: responsiveValue(20, 40),
     paddingVertical: responsiveValue(20, 40),
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    width: '100%',
   },
   content: {
     alignItems: 'center',
@@ -123,7 +107,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   descriptionContainer: {
-    marginBottom: responsiveValue(40, 64),
+    marginBottom: responsiveValue(60, 80),
     paddingHorizontal: responsiveValue(10, 20),
   },
   description: {
@@ -162,22 +146,5 @@ const styles = StyleSheet.create({
   loginLink: {
     color: '#ffffff',
     fontWeight: '600',
-  },
-  blob: {
-    position: 'absolute',
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    opacity: 0.14,
-  },
-  blobTopRight: {
-    backgroundColor: '#6ee7b7',
-    top: -40,
-    right: -40,
-  },
-  blobBottomLeft: {
-    backgroundColor: '#60a5fa',
-    bottom: -60,
-    left: -60,
   },
 });

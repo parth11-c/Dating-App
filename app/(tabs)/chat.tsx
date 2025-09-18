@@ -3,14 +3,16 @@ import { View, Text, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import SafeAreaWrapper from '@/components/SafeAreaWrapper';
 import { fontSizes, responsiveValue } from '@/lib/responsive';
+import { useThemeColors } from '@/hooks/useThemeColors';
 
 export default function ChatScreen() {
+  const colors = useThemeColors();
   return (
-    <SafeAreaWrapper style={styles.container}>
-      <StatusBar style="light" />
+    <SafeAreaWrapper style={[styles.container, { backgroundColor: colors.background }] }>
+      <StatusBar style={colors.mode === 'dark' ? 'light' : 'dark'} />
       <View style={styles.content}>
-        <Text style={styles.title}>Messages</Text>
-        <Text style={styles.subtitle}>Your chats will appear here.</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Messages</Text>
+        <Text style={[styles.subtitle, { color: colors.icon }]}>Your chats will appear here.</Text>
       </View>
     </SafeAreaWrapper>
   );

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
-import { ColorSchemeName, useColorScheme } from 'react-native';
+import { useColorScheme } from 'react-native';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -32,6 +32,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
 export function useAppTheme() {
   const ctx = useContext(ThemeContext);
-  if (!ctx) throw new Error('useAppTheme must be used within ThemeProvider');
-  return ctx;
+  if (ctx) return ctx;
+  // Fallback: derive from system to avoid crashes if provider isn't mounted yet
+  const systemScheme = useColorScheme();
+  const effective = systemScheme === 'dark' ? 'dark' : 'light';
+  return {
+    mode: 'system' as const,
+    effective,
+    toggle: () => {},
+    setMode: () => {},
+  };
 }

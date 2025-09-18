@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import { useThemeColors } from '@/hooks/useThemeColors';
 import SafeAreaWrapper from '@/components/SafeAreaWrapper';
 import TravelCard from '@/components/travel/TravelCard';
 import { travelItems } from '@/data/travel';
 import { fontSizes, responsiveValue, shadows, buttonDimensions } from '@/lib/responsive';
 
 export default function TripsScreen() {
+  const colors = useThemeColors();
   const [showUpcoming, setShowUpcoming] = useState(true);
 
   const upcoming = useMemo(() => travelItems.slice(0, 3), []);
@@ -13,19 +15,24 @@ export default function TripsScreen() {
 
   const data = showUpcoming ? upcoming : past;
 
+  const baseToggle = { backgroundColor: colors.mode === 'dark' ? '#141414' : '#f3f3f3', borderColor: colors.mode === 'dark' ? '#1f1f1f' : '#e3e3e3' };
+  const activeToggle = { backgroundColor: colors.text, borderColor: colors.text };
+  const baseText = { color: colors.icon };
+  const activeText = { color: colors.background };
+
   return (
-    <SafeAreaWrapper style={styles.container}>
+    <SafeAreaWrapper style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Your Trips</Text>
-        <Text style={styles.subtitle}>{showUpcoming ? 'Upcoming journeys' : 'Past adventures'}</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Your Trips</Text>
+        <Text style={[styles.subtitle, { color: colors.icon }]}>{showUpcoming ? 'Upcoming journeys' : 'Past adventures'}</Text>
       </View>
 
       <View style={styles.toggleRow}>
-        <TouchableOpacity onPress={() => setShowUpcoming(true)} style={[styles.toggleBtn, showUpcoming && styles.toggleActive]}>
-          <Text style={[styles.toggleText, showUpcoming && styles.toggleTextActive]}>Upcoming</Text>
+        <TouchableOpacity onPress={() => setShowUpcoming(true)} style={[styles.toggleBtn, baseToggle, showUpcoming && activeToggle]}>
+          <Text style={[styles.toggleText, baseText, showUpcoming && activeText]}>Upcoming</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => setShowUpcoming(false)} style={[styles.toggleBtn, !showUpcoming && styles.toggleActive]}>
-          <Text style={[styles.toggleText, !showUpcoming && styles.toggleTextActive]}>Past</Text>
+        <TouchableOpacity onPress={() => setShowUpcoming(false)} style={[styles.toggleBtn, baseToggle, !showUpcoming && activeToggle]}>
+          <Text style={[styles.toggleText, baseText, !showUpcoming && activeText]}>Past</Text>
         </TouchableOpacity>
       </View>
 
