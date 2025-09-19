@@ -24,7 +24,7 @@ export default function TripsScreen() {
     <SafeAreaWrapper style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Your Trips</Text>
-        <Text style={[styles.subtitle, { color: colors.icon }]}>{showUpcoming ? 'Upcoming journeys' : 'Past adventures'}</Text>
+        <Text style={[styles.subtitle, { color: colors.icon }]}>{showUpcoming ? 'Upcoming journeys' : 'Past adventure'}</Text>
       </View>
 
       <View style={styles.toggleRow}>
