@@ -1,150 +1,56 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Link, Redirect } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import SafeAreaWrapper from '../components/SafeAreaWrapper';
-import { fontSizes, buttonDimensions, shadows, responsiveValue } from '../lib/responsive';
-// Defer Supabase import to runtime to avoid SSR/bundler issues
+import React from "react";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { router } from "expo-router";
+import { fontSizes, responsiveValue, buttonDimensions, shadows } from "../lib/responsive";
 
-export default function WelcomePage() {
-  const [checking, setChecking] = useState(true);
-  const [loggedIn, setLoggedIn] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    let unsub: (() => void) | undefined;
-    (async () => {
-      const { supabase } = await import('../lib/supabase');
-      const { data } = await supabase.auth.getSession();
-      if (mounted) {
-        setLoggedIn(!!data.session);
-        setChecking(false);
-      }
-      const { data: sub } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
-        if (mounted) setLoggedIn(!!session);
-      });
-      unsub = () => sub.subscription.unsubscribe();
-    })();
-    return () => {
-      mounted = false;
-      unsub?.();
-    };
-  }, []);
-
-  if (!checking && loggedIn) {
-    return <Redirect href="/(tabs)" />;
-  }
-
+export default function Index() {
   return (
-    <SafeAreaWrapper style={styles.container}>
-      <StatusBar style="light" />
-      <View style={styles.background}>
-        <View style={styles.content}>
-          <View style={styles.header}>
-            <Text style={styles.logo}>ClgMart</Text>
-            <Text style={styles.tagline}>College Marketplace</Text>
-          </View>
-
-          <View style={styles.descriptionContainer}>
-            <Text style={styles.description}>
-              Buy, sell, and trade with your college community
-            </Text>
-          </View>
-
-          <View style={styles.buttonContainer}>
-            <Link href="/auth/signup" asChild>
-              <TouchableOpacity style={styles.primaryButton}>
-                <Text style={styles.primaryButtonText}>Get Started</Text>
-              </TouchableOpacity>
-            </Link>
-
-            <Text style={styles.loginPrompt}>
-              Already have an account?{' '}
-              <Link href="/auth/login" asChild>
-                <Text style={styles.loginLink}>Sign In</Text>
-              </Link>
-            </Text>
-          </View>
-        </View>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.center}>
+        <Text style={styles.logo}>ClgMart</Text>
+        <Text style={styles.subtitle}>Your college marketplace</Text>
+        <TouchableOpacity style={styles.button} onPress={() => router.replace("/auth/sign-in" as any)}> 
+          <Text style={styles.buttonText}>Get Started</Text>
+        </TouchableOpacity>
       </View>
-    </SafeAreaWrapper>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: "#0a0a0a",
   },
-  background: {
+  center: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: responsiveValue(20, 40),
-    paddingVertical: responsiveValue(20, 40),
-  },
-  content: {
-    alignItems: 'center',
-    width: '100%',
-    maxWidth: 600,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: responsiveValue(40, 60),
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: responsiveValue(24, 32),
   },
   logo: {
-    fontSize: responsiveValue(fontSizes.display, 48),
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: responsiveValue(6, 8),
-    letterSpacing: -1,
-    textAlign: 'center',
+    fontSize: responsiveValue(fontSizes.xl, 24),
+    color: "#ffffff",
+    fontWeight: "700",
+    marginBottom: responsiveValue(8, 12),
+    letterSpacing: -0.5,
   },
-  tagline: {
-    fontSize: responsiveValue(fontSizes.md, 18),
-    color: '#888888',
-    fontWeight: '400',
-    textAlign: 'center',
+  subtitle: {
+    fontSize: responsiveValue(fontSizes.md, 16),
+    color: "#888888",
+    marginBottom: responsiveValue(20, 28),
   },
-  descriptionContainer: {
-    marginBottom: responsiveValue(60, 80),
-    paddingHorizontal: responsiveValue(10, 20),
-  },
-  description: {
-    fontSize: responsiveValue(fontSizes.lg, 20),
-    color: '#cccccc',
-    textAlign: 'center',
-    lineHeight: responsiveValue(24, 28),
-    fontWeight: '300',
-  },
-  buttonContainer: {
-    width: '100%',
-    alignItems: 'center',
-    paddingHorizontal: responsiveValue(10, 20),
-  },
-  primaryButton: {
-    backgroundColor: '#ffffff',
+  button: {
+    backgroundColor: "#ffffff",
+    borderRadius: buttonDimensions.borderRadius,
     paddingVertical: buttonDimensions.height / 2,
     paddingHorizontal: buttonDimensions.paddingHorizontal,
-    borderRadius: buttonDimensions.borderRadius,
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: responsiveValue(20, 24),
     ...shadows.medium,
   },
-  primaryButtonText: {
-    color: '#000000',
-    fontSize: responsiveValue(fontSizes.lg, 18),
-    fontWeight: '600',
-  },
-  loginPrompt: {
+  buttonText: {
+    color: "#000000",
     fontSize: responsiveValue(fontSizes.md, 16),
-    color: '#888888',
-    textAlign: 'center',
-    lineHeight: responsiveValue(20, 22),
-  },
-  loginLink: {
-    color: '#ffffff',
-    fontWeight: '600',
+    fontWeight: "600",
   },
 });

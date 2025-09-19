@@ -1,45 +1,36 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
-import { useColorScheme } from 'react-native';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Appearance, ColorSchemeName } from 'react-native';
 
-export type ThemeMode = 'light' | 'dark' | 'system';
+export type AppTheme = 'light' | 'dark' | 'system';
 
-interface ThemeContextValue {
-  mode: ThemeMode;
-  effective: Exclude<ThemeMode, 'system'>; // resolved mode
-  toggle: () => void; // toggles light/dark
-  setMode: (mode: ThemeMode) => void;
-}
+type ThemeContextType = {
+  preference: AppTheme;
+  effective: Exclude<ColorSchemeName, null>;
+  setPreference: (t: AppTheme) => void;
+};
 
-const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
+const ThemeContext = createContext<ThemeContextType | null>(null);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const systemScheme = useColorScheme();
-  const [mode, setMode] = useState<ThemeMode>('system');
+  const [preference, setPreference] = useState<AppTheme>('system');
+  const [system, setSystem] = useState<Exclude<ColorSchemeName, null>>(Appearance.getColorScheme() ?? 'light');
 
-  const effective: Exclude<ThemeMode, 'system'> = (mode === 'system'
-    ? (systemScheme === 'dark' ? 'dark' : 'light')
-    : mode);
+  useEffect(() => {
+    const sub = Appearance.addChangeListener(({ colorScheme }) => {
+      setSystem(colorScheme ?? 'light');
+    });
+    return () => sub.remove();
+  }, []);
 
-  const value = useMemo<ThemeContextValue>(() => ({
-    mode,
-    effective,
-    toggle: () => setMode(prev => (prev === 'dark' ? 'light' : 'dark')),
-    setMode,
-  }), [mode, effective]);
+  const effective: Exclude<ColorSchemeName, null> = preference === 'system' ? system : preference;
+
+  const value = useMemo(() => ({ preference, effective, setPreference }), [preference, effective]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useAppTheme() {
   const ctx = useContext(ThemeContext);
-  if (ctx) return ctx;
-  // Fallback: derive from system to avoid crashes if provider isn't mounted yet
-  const systemScheme = useColorScheme();
-  const effective = systemScheme === 'dark' ? 'dark' : 'light';
-  return {
-    mode: 'system' as const,
-    effective,
-    toggle: () => {},
-    setMode: () => {},
-  };
+  if (!ctx) throw new Error('useAppTheme must be used within ThemeProvider');
+  return ctx;
 }

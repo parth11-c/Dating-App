@@ -1,46 +1,55 @@
 import React from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useLocalSearchParams } from "expo-router";
 import { useStore } from "@/store";
-import { router } from "expo-router";
 
-export default function ProfileScreen() {
-  const { currentUser, userPosts } = useStore();
-  const posts = userPosts(currentUser.id);
-  const insets = useSafeAreaInsets();
+export default function UserProfileViewScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { userPosts } = useStore();
+
+  if (!id) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.muted}>No user specified.</Text>
+      </View>
+    );
+  }
+
+  const posts = userPosts(id);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.avatar} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.name}>{currentUser.name}</Text>
-          <Text style={styles.sub}>@{currentUser.id}</Text>
+          <Text style={styles.name}>User {id}</Text>
+          <Text style={styles.sub}>Public profile</Text>
         </View>
       </View>
 
-      <Text style={styles.section}>Your posts</Text>
+      <Text style={styles.section}>Posts</Text>
       {posts.length === 0 ? (
         <Text style={styles.muted}>No posts yet.</Text>
       ) : (
         <FlatList
           data={posts}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
+          contentContainerStyle={{ paddingBottom: 24 }}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.card} onPress={() => router.push(`/post/${item.id}` as any)}>
+            <View style={styles.card}>
               <Text style={styles.cardTitle}>{item.title}</Text>
               <Text style={styles.muted}>{new Date(item.createdAt).toLocaleString()} • Visitors {item.visitors.length}</Text>
-            </TouchableOpacity>
+            </View>
           )}
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0a0a0a", padding: 12 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0a0a0a" },
   header: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#444", marginRight: 12 },
   name: { color: "#fff", fontSize: 18, fontWeight: "700" },

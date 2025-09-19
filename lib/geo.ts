@@ -1,29 +1,22 @@
-// Simple geo helpers for distance and bounding box
+export type LatLng = { lat: number; lon: number };
 
-const EARTH_RADIUS_M = 6371000; // meters
+// Haversine distance in meters
+export function distanceMeters(a: LatLng, b: LatLng): number {
+  const R = 6371000; // meters
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
 
-export function toRad(deg: number) {
-  return (deg * Math.PI) / 180;
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLon = Math.sin(dLon / 2);
+
+  const h = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon;
+  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  return R * c;
 }
 
-export function haversineDistanceM(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return EARTH_RADIUS_M * c;
-}
-
-export function boundingBox(lat: number, lon: number, radiusM: number) {
-  const dLat = (radiusM / EARTH_RADIUS_M) * (180 / Math.PI);
-  const dLon = (radiusM / (EARTH_RADIUS_M * Math.cos(toRad(lat)))) * (180 / Math.PI);
-  return {
-    minLat: lat - dLat,
-    maxLat: lat + dLat,
-    minLon: lon - dLon,
-    maxLon: lon + dLon,
-  };
+export function withinMeters(a: LatLng, b: LatLng, meters: number): boolean {
+  return distanceMeters(a, b) <= meters;
 }

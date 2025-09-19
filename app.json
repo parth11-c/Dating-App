@@ -9,7 +9,12 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Capture a place photo to create a post.",
+        "NSPhotoLibraryUsageDescription": "Select a place photo to create a post.",
+        "NSLocationWhenInUseUsageDescription": "Verify you're at the place and auto-fill coordinates."
+      }
     },
     "android": {
       "adaptiveIcon": {

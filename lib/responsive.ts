@@ -1,55 +1,47 @@
-import { Dimensions, Platform } from 'react-native';
+import { Platform, PixelRatio, Dimensions } from 'react-native';
 
-const { width, height } = Dimensions.get('window');
-
-export const isSmallDevice = width < 360;
-export const isTablet = Math.min(width, height) >= 768;
+const { width } = Dimensions.get('window');
 
 export const fontSizes = {
-  xs: 12,
-  sm: 14,
-  md: 16,
-  lg: 18,
-  xl: 22,
-  display: 34,
-};
-
-export const spacing = {
-  xs: 8,
   sm: 12,
-  md: 16,
-  lg: 20,
-  xl: 28,
+  md: 14,
+  lg: 16,
+  xl: 20,
 };
 
-export const responsiveValue = (small: number, large: number) => {
-  if (isTablet) return large;
-  if (isSmallDevice) return Math.round(small * 0.9);
-  return small;
-};
-
-export const responsivePadding = {
-  horizontal: responsiveValue(16, 32),
-  vertical: responsiveValue(16, 32),
-};
-
-export const buttonDimensions = {
-  height: responsiveValue(48, 56),
-  paddingHorizontal: responsiveValue(18, 22),
-  borderRadius: responsiveValue(12, 16),
-};
+export function responsiveValue<T extends number>(phone: T, large: T): T {
+  // Simple breakpoint: treat width >= 400 as large
+  return (width >= 400 ? large : phone) as T;
+}
 
 export const shadows = {
+  none: {},
+  small: Platform.select({
+    ios: {
+      shadowColor: '#000',
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      shadowOffset: { width: 0, height: 2 },
+    },
+    default: {
+      elevation: 2,
+    },
+  }),
   medium: Platform.select({
     ios: {
       shadowColor: '#000',
       shadowOpacity: 0.15,
-      shadowRadius: 12,
-      shadowOffset: { width: 0, height: 8 },
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 4 },
     },
-    android: {
-      elevation: 6,
+    default: {
+      elevation: 4,
     },
-    default: {},
   }),
+};
+
+export const buttonDimensions = {
+  height: 44,
+  paddingHorizontal: 16,
+  borderRadius: 12,
 };

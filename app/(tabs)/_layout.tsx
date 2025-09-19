@@ -1,96 +1,54 @@
-import { Redirect, Tabs } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React from "react";
+import { Tabs } from "expo-router";
+import { FontAwesome } from "@expo/vector-icons";
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { useThemeColors } from '@/hooks/useThemeColors';
-import { supabase } from '@/lib/supabase';
-import ThemeToggle from '@/components/ThemeToggle';
-
-export default function TabLayout() {
-  const colors = useThemeColors();
-  const [checking, setChecking] = useState(true);
-  const [loggedIn, setLoggedIn] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    supabase.auth.getSession().then(({ data }: { data: { session: any } }) => {
-      if (!mounted) return;
-      setLoggedIn(!!data.session);
-      setChecking(false);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
-      setLoggedIn(!!session);
-    });
-    return () => {
-      mounted = false;
-      sub.subscription.unsubscribe();
-    };
-  }, []);
-
-  if (!checking && !loggedIn) {
-    return <Redirect href="/auth/login" />;
-  }
-
+export default function TabsLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: colors.tint,
-        tabBarStyle: { backgroundColor: colors.background, borderTopColor: colors.icon + '22' },
-        headerStyle: { backgroundColor: colors.background },
-        headerTitleStyle: { color: colors.text },
-        headerRight: () => (
-          <ThemeToggle />
-        ),
-        headerRightContainerStyle: { paddingRight: 12 },
-        headerShown: true,
-        tabBarButton: HapticTab,
-      }}>
+    <Tabs screenOptions={{
+      headerShown: true,
+      headerStyle: { backgroundColor: "#0a0a0a" },
+      headerTitleStyle: { color: "#fff" },
+      headerTintColor: "#fff",
+      tabBarActiveTintColor: "#fff",
+      tabBarInactiveTintColor: "#888",
+      tabBarStyle: { backgroundColor: "#0a0a0a", borderTopColor: "#222" },
+      tabBarHideOnKeyboard: false,
+    }}>
       <Tabs.Screen
-        name="map"
+        name="home"
         options={{
-          title: 'Map',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="map.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: "Home",
+          tabBarIcon: ({ color, size }) => <FontAwesome name="home" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="explore"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: "Explore",
+          tabBarIcon: ({ color, size }) => <FontAwesome name="search" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
-        name="trips"
+        name="post"
         options={{
-          title: 'Trips',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="suitcase.fill" color={color} />,
+          title: "Post",
+          tabBarIcon: ({ color, size }) => <FontAwesome name="plus-square" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
-        name="chat"
+        name="maps"
         options={{
-          title: 'Chat',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="bubble.left.and.bubble.right.fill" color={color} />
-          ),
+          title: "Maps",
+          tabBarIcon: ({ color, size }) => <FontAwesome name="map" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
+          title: "Profile",
+          tabBarIcon: ({ color, size }) => <FontAwesome name="user" color={color} size={size} />,
         }}
       />
     </Tabs>
   );
 }
-
