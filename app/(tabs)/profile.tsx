@@ -1,13 +1,18 @@
 import React from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert, useWindowDimensions } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useStore } from "@/store";
 import { router } from "expo-router";
 
 export default function ProfileScreen() {
-  const { currentUser, userPosts } = useStore();
+  const { currentUser, userPosts, deletePost } = useStore();
   const posts = userPosts(currentUser.id);
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  // container horizontal padding = 12 on both sides; column gap = 8
+  const CELL_GAP = 8;
+  const H_PADDING = 12;
+  const cellWidth = Math.floor((width - H_PADDING * 2 - CELL_GAP) / 2);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -26,12 +31,34 @@ export default function ProfileScreen() {
         <FlatList
           data={posts}
           keyExtractor={(item) => item.id}
+          numColumns={2}
+          columnWrapperStyle={{ gap: CELL_GAP }}
           contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
+          ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.card} onPress={() => router.push(`/post/${item.id}` as any)}>
-              <Text style={styles.cardTitle}>{item.title}</Text>
-              <Text style={styles.muted}>{new Date(item.createdAt).toLocaleString()} • Visitors {item.visitors.length}</Text>
-            </TouchableOpacity>
+              <TouchableOpacity style={[styles.gridItem, { width: cellWidth }]} onPress={() => router.push(`/post/${item.id}` as any)} activeOpacity={0.8}>
+                <Image source={{ uri: item.imageUri }} style={styles.gridImage} />
+                {currentUser.id === item.userId ? (
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    onPress={() => {
+                      Alert.alert('Delete post', 'Are you sure you want to delete this post?', [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Delete',
+                          style: 'destructive',
+                          onPress: async () => {
+                            const res = await deletePost(item.id);
+                            if (!res.ok) Alert.alert('Delete failed', res.reason);
+                          },
+                        },
+                      ]);
+                    }}
+                  >
+                    <Text style={styles.deleteIcon}>✕</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </TouchableOpacity>
           )}
         />
       )}
@@ -47,6 +74,8 @@ const styles = StyleSheet.create({
   sub: { color: "#aaa" },
   section: { color: "#fff", fontSize: 16, fontWeight: "600", marginTop: 8, marginBottom: 6 },
   muted: { color: "#9aa0a6" },
-  card: { backgroundColor: "#111", borderColor: "#222", borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 8 },
-  cardTitle: { color: "#fff", fontWeight: "600", marginBottom: 4 },
+  gridItem: { position: 'relative', backgroundColor: '#111', borderColor: '#222', borderWidth: 1, borderRadius: 10, overflow: 'hidden' },
+  gridImage: { width: '100%', aspectRatio: 1 },
+  deleteBtn: { position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#333' },
+  deleteIcon: { color: '#fff', fontWeight: '700' },
 });

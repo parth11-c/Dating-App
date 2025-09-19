@@ -13,6 +13,7 @@ type StoreContextType = StoreState & {
   verifyVisit: (postId: string, userLocation: LatLng) => Promise<{ ok: true } | { ok: false; reason: string }>;
   userPosts: (userId: string) => Post[];
   getPost: (postId: string) => Post | undefined;
+  deletePost: (postId: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
 };
 
 const StoreContext = createContext<StoreContextType | null>(null);
@@ -43,9 +44,33 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
     if (!error && data) {
       const posts: Post[] = data.map((row: any) => {
-        const coords = row.location?.coordinates;
-        const lon = Array.isArray(coords) ? coords[0] : 0;
-        const lat = Array.isArray(coords) ? coords[1] : 0;
+        let lat = 0;
+        let lon = 0;
+        const loc = row.location;
+        try {
+          if (loc && Array.isArray(loc.coordinates) && loc.coordinates.length >= 2) {
+            // GeoJSON { type: 'Point', coordinates: [lon, lat] }
+            lon = Number(loc.coordinates[0]);
+            lat = Number(loc.coordinates[1]);
+          } else if (loc && typeof loc === 'string') {
+            // WKT string: 'POINT(lon lat)'
+            const m = loc.match(/POINT\s*\(\s*([+-]?[0-9]*\.?[0-9]+)\s+([+-]?[0-9]*\.?[0-9]+)\s*\)/i);
+            if (m) {
+              lon = Number(m[1]);
+              lat = Number(m[2]);
+            }
+          } else if (loc && typeof loc === 'object' && 'x' in loc && 'y' in loc) {
+            // Possible { x: lon, y: lat }
+            lon = Number((loc as any).x);
+            lat = Number((loc as any).y);
+          }
+        } catch (e) {
+          console.warn('[loadPosts] Could not parse location for row', row.id, loc);
+        }
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+          lat = 0;
+          lon = 0;
+        }
         return {
           id: row.id,
           userId: row.user_id,
@@ -151,6 +176,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const createPost: StoreContextType['createPost'] = async (input) => {
     try {
       if (!state.currentUser.id) return { ok: false, reason: 'Not signed in' };
+      // Validate coordinates to avoid storing 0,0 or invalid values
+      if (!Number.isFinite(input.location.lat) || !Number.isFinite(input.location.lon)) {
+        return { ok: false, reason: 'Invalid coordinates. Please enter a valid latitude and longitude.' };
+      }
+      if (input.location.lat === 0 && input.location.lon === 0) {
+        return { ok: false, reason: 'Coordinates cannot be 0,0. Please use valid location values.' };
+      }
       // Upload image if needed
       const image_url = await uploadIfNeeded(state.currentUser.id, input.imageUri);
       // Use RPC to construct geography server-side
@@ -187,6 +219,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const userPosts = useCallback((userId: string) => state.posts.filter((p) => p.userId === userId).sort((a,b) => b.createdAt - a.createdAt), [state.posts]);
   const getPost = useCallback((postId: string) => state.posts.find((p) => p.id === postId), [state.posts]);
 
+  const deletePost: StoreContextType['deletePost'] = async (postId) => {
+    try {
+      if (!state.currentUser.id) return { ok: false, reason: 'Not signed in' };
+      // Attempt to delete the post. RLS should ensure only the owner can delete.
+      const { error } = await supabase
+        .from('posts')
+        .delete()
+        .eq('id', postId);
+      if (error) return { ok: false, reason: error.message };
+      await loadPosts();
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, reason: e.message };
+    }
+  };
+
   const value = useMemo<StoreContextType>(() => ({
     ...state,
     signIn,
@@ -197,7 +245,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     verifyVisit,
     userPosts,
     getPost,
-  }), [state, signIn, signUp, signOut, createPost, verifyVisit, userPosts, getPost]);
+    deletePost,
+  }), [state, signIn, signUp, signOut, createPost, verifyVisit, userPosts, getPost, deletePost]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

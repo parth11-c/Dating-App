@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Alert, TextInput } from "react-native";
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Alert, TextInput, Linking } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams } from "expo-router";
 import { useStore } from "@/store";
@@ -21,6 +21,18 @@ export default function PostDetailScreen() {
       </View>
     );
   }
+
+  const openInMaps = () => {
+    const { lat, lon } = post.location;
+    if ((lat === 0 && lon === 0) || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+      Alert.alert("Location missing", "This post doesn't have a valid location saved. Please edit or recreate the post with correct coordinates.");
+      return;
+    }
+    const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert("Unable to open maps", "Please try again or check your maps app.");
+    });
+  };
 
   const onVerify = async () => {
     const latNum = Number(lat);
@@ -57,6 +69,10 @@ export default function PostDetailScreen() {
         <Text style={styles.meta}>
           Created {new Date(post.createdAt).toLocaleString()} • Visitors {post.visitors.length}
         </Text>
+        <Text style={styles.coords}>Coords: {post.location.lat.toFixed(6)}, {post.location.lon.toFixed(6)}</Text>
+        <TouchableOpacity style={styles.mapButton} onPress={openInMaps}>
+          <Text style={styles.mapButtonText}>Let's Go</Text>
+        </TouchableOpacity>
 
         <View style={styles.verifyBox}>
           <Text style={styles.section}>Verify your visit</Text>
@@ -110,6 +126,7 @@ const styles = StyleSheet.create({
   title: { color: "#fff", fontSize: 20, fontWeight: "700", marginTop: 12 },
   desc: { color: "#ddd", marginTop: 8 },
   meta: { color: "#aaa", marginTop: 8, marginBottom: 12 },
+  coords: { color: "#8ab4f8", marginTop: 2 },
   section: { color: "#fff", fontSize: 16, fontWeight: "600", marginTop: 10, marginBottom: 6 },
   verifyBox: { backgroundColor: "#111", borderColor: "#222", borderWidth: 1, borderRadius: 12, padding: 12 },
   row: { flexDirection: "row" },
@@ -117,6 +134,8 @@ const styles = StyleSheet.create({
   half: { flex: 1 },
   button: { backgroundColor: "#fff", paddingVertical: 12, borderRadius: 10, alignItems: "center", marginTop: 4 },
   buttonText: { color: "#000", fontWeight: "600" },
+  mapButton: { backgroundColor: "#1a73e8", paddingVertical: 12, borderRadius: 10, alignItems: "center", marginTop: 8 },
+  mapButtonText: { color: "#fff", fontWeight: "600" },
   secondaryButton: { backgroundColor: "#222", paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, borderColor: "#333", borderWidth: 1, marginBottom: 8 },
   secondaryButtonText: { color: "#fff" },
   text: { color: "#fff" },
