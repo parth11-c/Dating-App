@@ -3,10 +3,17 @@
   "compilerOptions": {
     "strict": true,
     "jsx": "react-jsx",
+    "baseUrl": ".",
     "esModuleInterop": true,
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "expo-router": [
+        "./node_modules/expo-router/build/index.d.ts"
+      ],
+      "expo-router/*": [
+        "./node_modules/expo-router/build/*"
       ]
     }
   },

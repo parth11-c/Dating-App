@@ -1,7 +1,7 @@
 import React from "react";
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Share, Linking } from "react-native";
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Share, Linking, Alert } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, router } from "expo-router";
 import { useStore } from "@/store";
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
@@ -14,7 +14,7 @@ export default function PostDetailScreen() {
   const insets = useSafeAreaInsets();
   
   const [activeImageIndex, setActiveImageIndex] = React.useState(0);
-  const [seller, setSeller] = React.useState<{ name: string; avatar_url?: string } | null>(null);
+  const [seller, setSeller] = React.useState<{ name: string; avatar_url?: string; phone?: string } | null>(null);
 
   React.useEffect(() => {
     let mounted = true;
@@ -22,7 +22,7 @@ export default function PostDetailScreen() {
       if (!post?.userId) return;
       const { data } = await supabase
         .from('profiles')
-        .select('name, avatar_url')
+        .select('name, avatar_url, phone')
         .eq('id', post.userId)
         .single();
       if (mounted) setSeller(data as any);
@@ -51,14 +51,28 @@ export default function PostDetailScreen() {
   };
 
   const handleContactSeller = () => {
-    // In a real app, this would open a chat or call the seller
-    const phoneNumber = '+1234567890'; // Replace with actual seller's phone number
+    const phoneNumber = seller?.phone?.replace(/\s+/g, '');
+    if (!phoneNumber) {
+      Alert.alert('No phone number', 'The seller has not added a phone number yet.');
+      return;
+    }
     Linking.openURL(`tel:${phoneNumber}`);
   };
 
   const handleWhatsApp = () => {
     const message = `Hi, I'm interested in your product: ${post.title}`;
-    const url = `https://wa.me/1234567890?text=${encodeURIComponent(message)}`; // Replace with actual seller's WhatsApp number
+    const raw = seller?.phone?.trim();
+    if (!raw) {
+      Alert.alert('WhatsApp unavailable', 'The seller has not added a WhatsApp number yet.');
+      return;
+    }
+    // wa.me requires international number without '+' and without any special chars
+    const digits = raw.replace(/\D+/g, '');
+    if (!digits) {
+      Alert.alert('Invalid number', 'The seller phone number appears invalid.');
+      return;
+    }
+    const url = `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
     WebBrowser.openBrowserAsync(url);
   };
 
@@ -74,6 +88,7 @@ export default function PostDetailScreen() {
             style={styles.image} 
             resizeMode="cover"
           />
+          <View style={styles.imageOverlay} />
           {/* Image Pagination Dots */}
           <View style={styles.imagePagination}>
             {[1, 2, 3].map((_: number, idx: number) => (
@@ -125,8 +140,12 @@ export default function PostDetailScreen() {
 
         {/* Seller Info */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Seller Information</Text>
-          <View style={styles.sellerInfo}>
+          <Text style={styles.sectionTitle}>Seller</Text>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={styles.sellerCard}
+            onPress={() => router.push(`/profile/${post.userId}` as any)}
+          >
             {seller?.avatar_url ? (
               <Image source={{ uri: seller.avatar_url }} style={styles.sellerAvatarImage} />
             ) : (
@@ -137,8 +156,17 @@ export default function PostDetailScreen() {
             <View style={styles.sellerDetails}>
               <Text style={styles.sellerName}>{seller?.name || 'Seller'}</Text>
               <Text style={styles.sellerSub}>@{post.userId}</Text>
+              {!!seller?.phone && (
+                <View style={styles.sellerMetaRow}>
+                  <Ionicons name="call-outline" size={14} color="#9aa0a6" />
+                  <Text style={styles.sellerMetaText}>{seller.phone}</Text>
+                </View>
+              )}
             </View>
-          </View>
+            <View style={styles.viewProfileBtn}>
+              <Ionicons name="chevron-forward" size={18} color="#bbb" />
+            </View>
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -187,6 +215,14 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
+  },
+  imageOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 120,
+    backgroundColor: 'rgba(0,0,0,0.25)',
   },
   imagePagination: {
     position: 'absolute',
@@ -353,6 +389,15 @@ const styles = StyleSheet.create({
   sellerInfo: {
     flex: 1,
   },
+  sellerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f0f0f',
+    borderWidth: 1,
+    borderColor: '#1e1e1e',
+    borderRadius: 12,
+    padding: 12,
+  },
   sellerName: {
     fontSize: 16,
     fontWeight: '500',
@@ -362,6 +407,26 @@ const styles = StyleSheet.create({
   sellerSub: {
     color: '#888',
     fontSize: 12,
+  },
+  sellerMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+  },
+  sellerMetaText: {
+    color: '#9aa0a6',
+    fontSize: 12,
+  },
+  viewProfileBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#222',
   },
   sellerRating: {
     flexDirection: 'row',
