@@ -1,14 +1,14 @@
 import React from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert, Linking } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+// Removed SafeAreaView and insets
 import { useStore } from "@/store";
 import { router } from "expo-router";
+import { supabase } from "@/lib/supabase";
 
 export default function ProfileScreen() {
   const { currentUser, userPosts, deletePost } = useStore();
   const posts = userPosts(currentUser.id);
-  const insets = useSafeAreaInsets();
 
   const formatPhone = (raw?: string) => {
     if (!raw) return '';
@@ -33,6 +33,16 @@ export default function ProfileScreen() {
     }
     parts.push(rest);
     return `${cc} ${parts.join(' ')}`.trim();
+  };
+
+  const onLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      // ignore
+    } finally {
+      router.replace('/auth/sign-in' as any);
+    }
   };
 
   const confirmDelete = (postId: string) => {
@@ -67,7 +77,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.header}>
         {currentUser?.avatar ? (
           <Image source={{ uri: currentUser.avatar }} style={styles.avatar} />
@@ -88,6 +98,10 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.wpBtn} onPress={openWhatsApp}>
           <Ionicons name="logo-whatsapp" size={16} color="#1f3124" />
           <Text style={styles.wpBtnText}>WhatsApp</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
+          <Ionicons name="log-out-outline" size={16} color="#fff" />
+          <Text style={styles.logoutBtnText}>Logout</Text>
         </TouchableOpacity>
       </View>
 
@@ -110,7 +124,7 @@ export default function ProfileScreen() {
           keyExtractor={(item) => item.id}
           numColumns={2}
           columnWrapperStyle={styles.gridRow}
-          contentContainerStyle={[styles.gridContent, { paddingBottom: insets.bottom + 80 }]}
+          contentContainerStyle={[styles.gridContent, { paddingBottom: 80 }]}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (
             <TouchableOpacity 
@@ -132,13 +146,13 @@ export default function ProfileScreen() {
           )}
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0a0a0a", paddingHorizontal: 12, paddingTop: 1 },
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  header: { flexDirection: "row", alignItems: "center", marginBottom: 6 ,marginTop: 16},
   avatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: "#444", marginRight: 12 },
   name: { color: "#fff", fontSize: 20, fontWeight: "800", marginBottom: 2 },
   sub: { color: "#aaa" },
@@ -156,6 +170,8 @@ const styles = StyleSheet.create({
   phoneText: { color: '#a6b1b8', fontSize: 13, fontWeight: '600' },
   wpBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', backgroundColor: '#25D366', paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: '#199e4d' },
   wpBtnText: { color: '#1f3124', fontWeight: '800' },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', backgroundColor: '#c0392b', paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: '#9e2f23' },
+  logoutBtnText: { color: '#fff', fontWeight: '800' },
   prompt: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#161616', borderWidth: 1, borderColor: '#222', padding: 10, borderRadius: 10, marginBottom: 8 },
   promptText: { color: '#ddd', flex: 1, fontSize: 13 },
   gridContent: { paddingTop: 8 },

@@ -147,7 +147,7 @@ export default function PostScreen() {
         <View style={styles.formGroup}>
           <Text style={styles.label}>Price*</Text>
           <View style={styles.priceInputContainer}>
-            <Text style={styles.currencySymbol}>₹</Text>
+            <View style={styles.currencyWrap}><Text style={styles.currencySymbol}>₹</Text></View>
             <TextInput
               placeholder="0.00"
               placeholderTextColor="#888"
@@ -161,34 +161,30 @@ export default function PostScreen() {
         
         <View style={styles.formGroup}>
           <Text style={styles.label}>Condition*</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={condition}
-              onValueChange={(itemValue) => setCondition(itemValue as Condition)}
-              style={styles.picker}
-              dropdownIconColor="#666"
-            >
-              {CONDITIONS.map((cond) => (
-                <Picker.Item key={cond} label={cond} value={cond} />
-              ))}
-            </Picker>
-          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+            {CONDITIONS.map((cond) => {
+              const selected = condition === cond;
+              return (
+                <TouchableOpacity key={cond} onPress={() => setCondition(cond)} style={[styles.chip, selected ? styles.chipSelected : styles.chipUnselected]}>
+                  <Text style={selected ? styles.chipTextSelected : styles.chipTextUnselected}>{cond}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
         
         <View style={styles.formGroup}>
           <Text style={styles.label}>Category*</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={category}
-              onValueChange={(itemValue) => setCategory(itemValue)}
-              style={styles.picker}
-              dropdownIconColor="#666"
-            >
-              {CATEGORIES.map((cat) => (
-                <Picker.Item key={cat} label={cat} value={cat} />
-              ))}
-            </Picker>
-          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+            {CATEGORIES.map((cat) => {
+              const selected = category === cat;
+              return (
+                <TouchableOpacity key={cat} onPress={() => setCategory(cat)} style={[styles.chip, selected ? styles.chipSelected : styles.chipUnselected]}>
+                  <Text style={selected ? styles.chipTextSelected : styles.chipTextUnselected}>{cat}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
         
         <View style={styles.formGroup}>
@@ -218,7 +214,7 @@ export default function PostScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0a0a0a" },
-  content: { padding: 20, paddingBottom: 40 },
+  content: { padding: 16, paddingBottom: 40 },
   heading: { fontSize: 22, fontWeight: '700', marginBottom: 24, color: '#fff' },
   imageUploadContainer: {
     marginBottom: 24,
@@ -293,54 +289,30 @@ const styles = StyleSheet.create({
     borderColor: '#222',
     borderRadius: 10,
     overflow: 'hidden',
+    height: 48,
   },
-  currencySymbol: {
-    paddingHorizontal: 14,
-    fontSize: 16,
-    color: '#aaa',
-    backgroundColor: '#161616',
-    height: '100%',
-    textAlignVertical: 'center',
-  },
+  currencyWrap: { paddingHorizontal: 14, height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#161616', borderRightWidth: 1, borderRightColor: '#222' },
+  currencySymbol: { fontSize: 16, color: '#aaa' },
   priceInput: {
     flex: 1,
     borderWidth: 0,
-    borderLeftWidth: 1,
-    borderColor: '#222',
     borderRadius: 0,
     marginBottom: 0,
     paddingLeft: 12,
   },
-  pickerContainer: {
-    borderWidth: 1,
-    borderColor: '#222',
-    borderRadius: 10,
-    overflow: 'hidden',
-    backgroundColor: '#111',
-  },
-  picker: {
-    height: 50,
-    color: '#fff',
-  },
+  chipsRow: { gap: 10 },
+  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
+  chipSelected: { backgroundColor: '#fff', borderColor: '#fff' },
+  chipUnselected: { backgroundColor: '#111', borderColor: '#222' },
+  chipTextSelected: { color: '#0a0a0a', fontWeight: '700' },
+  chipTextUnselected: { color: '#ddd', fontWeight: '600' },
   textArea: {
     minHeight: 100,
     textAlignVertical: 'top',
   },
-  submitButton: {
-    backgroundColor: '#4da3ff',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  submitButtonDisabled: {
-    backgroundColor: '#2b5e91',
-  },
-  submitButtonText: {
-    color: '#0a0a0a',
-    fontSize: 16,
-    fontWeight: '700',
-  },
+  submitButton: { backgroundColor: '#fff', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 20, borderWidth: 1, borderColor: '#e5e5e5' },
+  submitButtonDisabled: { backgroundColor: '#e5e5e5' },
+  submitButtonText: { color: '#0a0a0a', fontSize: 16, fontWeight: '800' },
   row: { 
     flexDirection: 'row' 
   },

@@ -14,6 +14,28 @@ export default function UserProfileViewScreen() {
   const insets = useSafeAreaInsets();
   const [profile, setProfile] = React.useState<{ name?: string; avatar_url?: string; phone?: string } | null>(null);
 
+  const formatPhone = (raw?: string) => {
+    if (!raw) return '';
+    const m = raw.match(/^(\+\d{1,2})(\d{3,11})$/);
+    if (!m) return raw;
+    const cc = m[1];
+    const digits = m[2];
+    if (cc === '+91' && digits.length === 10) {
+      return `${cc} ${digits.slice(0,5)} ${digits.slice(5)}`;
+    }
+    if (cc === '+1' && digits.length === 10) {
+      return `${cc} ${digits.slice(0,3)} ${digits.slice(3,6)} ${digits.slice(6)}`;
+    }
+    const parts: string[] = [];
+    let rest = digits;
+    while (rest.length > 4) {
+      parts.push(rest.slice(0,3));
+      rest = rest.slice(3);
+    }
+    parts.push(rest);
+    return `${cc} ${parts.join(' ')}`.trim();
+  };
+
   if (!id) {
     return (
       <View style={styles.center}>
@@ -70,12 +92,12 @@ export default function UserProfileViewScreen() {
           )}
           <View style={{ flex: 1 }}>
             <Text style={styles.name}>{profile?.name || 'User'}</Text>
-            <Text style={styles.sub}>@{id}</Text>
+            <Text style={styles.sub}>{formatPhone(profile?.phone) || 'WhatsApp not added'}</Text>
           </View>
         </View>
         {/* Actions (match profile page but Edit -> Message) */}
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.editBtn} onPress={handleCall}>
+          <TouchableOpacity style={styles.editBtn} onPress={() => router.push(`/message/${id}` as any)}>
             <Ionicons name="chatbubble-ellipses" size={16} color="#4da3ff" />
             <Text style={styles.editBtnText}>Message</Text>
           </TouchableOpacity>

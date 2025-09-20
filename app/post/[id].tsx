@@ -30,6 +30,28 @@ export default function PostDetailScreen() {
     return () => { mounted = false; };
   }, [post?.userId]);
 
+  const formatPhone = (raw?: string) => {
+    if (!raw) return '';
+    const m = raw.match(/^(\+\d{1,2})(\d{3,14})$/);
+    if (!m) return raw;
+    const cc = m[1];
+    const digits = m[2];
+    if (cc === '+91' && digits.length === 10) {
+      return `${cc} ${digits.slice(0,5)} ${digits.slice(5)}`;
+    }
+    if (cc === '+1' && digits.length === 10) {
+      return `${cc} ${digits.slice(0,3)} ${digits.slice(3,6)} ${digits.slice(6)}`;
+    }
+    const parts: string[] = [];
+    let rest = digits;
+    while (rest.length > 4) {
+      parts.push(rest.slice(0,3));
+      rest = rest.slice(3);
+    }
+    parts.push(rest);
+    return `${cc} ${parts.join(' ')}`.trim();
+  };
+
   if (!post) {
     return (
       <View style={styles.center}>
@@ -39,14 +61,22 @@ export default function PostDetailScreen() {
   }
 
   const handleShare = async () => {
+    const message = `Hi, I'm interested in your product: ${post.title}`;
+    const raw = seller?.phone?.trim();
+    if (!raw) {
+      Alert.alert('WhatsApp unavailable', 'The seller has not added a WhatsApp number yet.');
+      return;
+    }
+    const digits = raw.replace(/\D+/g, '');
+    if (!digits) {
+      Alert.alert('Invalid number', 'The seller phone number appears invalid.');
+      return;
+    }
+    const url = `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
     try {
-      await Share.share({
-        message: `Check out this product: ${post.title} - ${post.description?.substring(0, 100)}...`,
-        url: `https://clgmart.com/products/${id}`,
-        title: post.title,
-      });
-    } catch (error) {
-      console.error('Error sharing:', error);
+      await WebBrowser.openBrowserAsync(url);
+    } catch (e: any) {
+      Alert.alert('Cannot open WhatsApp', e?.message || 'Please try again.');
     }
   };
 
@@ -80,7 +110,7 @@ export default function PostDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
         {/* Image Gallery */}
         <View style={styles.imageContainer}>
           <Image 
@@ -89,6 +119,19 @@ export default function PostDetailScreen() {
             resizeMode="cover"
           />
           <View style={styles.imageOverlay} />
+          {/* Top icon bar over image */}
+          <View style={styles.topImageBar}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.circleIconBtn}>
+              <Ionicons name="chevron-back" size={18} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleShare} style={styles.circleIconBtn}>
+              <Ionicons name="logo-whatsapp" size={16} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          {/* Floating price badge */}
+          <View style={styles.priceBadge}>
+            <Text style={styles.priceBadgeText}>₹{post.price?.toFixed(0) || '0'}</Text>
+          </View>
           {/* Image Pagination Dots */}
           <View style={styles.imagePagination}>
             {[1, 2, 3].map((_: number, idx: number) => (
@@ -106,12 +149,9 @@ export default function PostDetailScreen() {
         {/* Product Info */}
         <View style={styles.productHeader}>
           <View>
-            <Text style={styles.title}>{post.title}</Text>
+            <Text style={styles.title} numberOfLines={2}>{post.title}</Text>
             <Text style={styles.category}>{post.category || 'General'}</Text>
           </View>
-          <TouchableOpacity onPress={handleShare} style={styles.shareButton}>
-            <Ionicons name="share-social" size={20} color="#aaa" />
-          </TouchableOpacity>
         </View>
 
         {/* Price and chips */}
@@ -127,16 +167,21 @@ export default function PostDetailScreen() {
           </View>
         </View>
 
-        {/* Spacing */}
-        <View style={{ height: 8 }} />
+        {/* Divider */}
+        <View style={styles.divider} />
 
         {/* Description */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Description</Text>
-          <Text style={styles.description}>
-            {post.description || 'No description provided.'}
-          </Text>
+          <View style={styles.card}>
+            <Text style={styles.description}>
+              {post.description || 'No description provided.'}
+            </Text>
+          </View>
         </View>
+
+        {/* Divider */}
+        <View style={styles.divider} />
 
         {/* Seller Info */}
         <View style={styles.sectionContainer}>
@@ -155,13 +200,7 @@ export default function PostDetailScreen() {
             )}
             <View style={styles.sellerDetails}>
               <Text style={styles.sellerName}>{seller?.name || 'Seller'}</Text>
-              <Text style={styles.sellerSub}>@{post.userId}</Text>
-              {!!seller?.phone && (
-                <View style={styles.sellerMetaRow}>
-                  <Ionicons name="call-outline" size={14} color="#9aa0a6" />
-                  <Text style={styles.sellerMetaText}>{seller.phone}</Text>
-                </View>
-              )}
+              <Text style={styles.sellerSub}>{formatPhone(seller?.phone) || 'WhatsApp not added'}</Text>
             </View>
             <View style={styles.viewProfileBtn}>
               <Ionicons name="chevron-forward" size={18} color="#bbb" />
@@ -169,18 +208,6 @@ export default function PostDetailScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-
-      {/* Fixed Bottom Bar */}
-      <View style={[styles.bottomBar, { paddingBottom: insets.bottom }]}> 
-        <TouchableOpacity style={[styles.ctaButton, styles.ctaOutline]} onPress={handleContactSeller}>
-          <Ionicons name="chatbubble-ellipses" size={18} color="#4da3ff" />
-          <Text style={styles.ctaOutlineText}>Message</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.ctaButton, styles.ctaPrimary]} onPress={handleWhatsApp}>
-          <Ionicons name="logo-whatsapp" size={18} color="#0a0a0a" />
-          <Text style={styles.ctaPrimaryText}>WhatsApp</Text>
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
 }
@@ -191,8 +218,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#0a0a0a',
   },
   content: {
-    padding: 16,
-    paddingBottom: 120, // Extra padding for bottom bar
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
   },
   center: {
     flex: 1,
@@ -221,9 +249,40 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: 120,
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    height: '100%',
+    backgroundColor: 'rgba(0,0,0,0.35)'
   },
+  topImageBar: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  circleIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)'
+  },
+  priceBadge: {
+    position: 'absolute',
+    left: 12,
+    bottom: 12,
+    backgroundColor: 'rgba(10,10,10,0.8)',
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  priceBadgeText: { color: '#fff', fontWeight: '800' },
   imagePagination: {
     position: 'absolute',
     bottom: 16,
@@ -247,17 +306,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '800',
     color: '#fff',
     marginBottom: 4,
   },
   category: {
-    fontSize: 12,
-    color: '#aaa',
+    fontSize: 13,
+    color: '#a6b1b8',
   },
   shareButton: {
     padding: 8,
@@ -265,18 +325,17 @@ const styles = StyleSheet.create({
   priceContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   price: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: '#fff',
     marginRight: 12,
   },
   chipsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
   chip: {
     backgroundColor: '#132a17',
@@ -352,13 +411,34 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   sectionContainer: {
-    marginBottom: 24,
+    marginTop: 12,
+    marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#ddd',
     marginBottom: 8,
+  },
+  card: {
+    backgroundColor: '#0f0f0f',
+    borderColor: '#1e1e1e',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    // subtle shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#151515',
+    borderBottomWidth: 1,
+    borderBottomColor: '#151515',
+    marginVertical: 8,
   },
   description: {
     fontSize: 14,
@@ -396,11 +476,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1e1e1e',
     borderRadius: 12,
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   sellerName: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '700',
     color: '#fff',
     marginBottom: 2,
   },
@@ -437,42 +518,5 @@ const styles = StyleSheet.create({
     color: '#aaa',
     fontSize: 14,
   },
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#0d0d0d',
-    borderTopWidth: 1,
-    borderTopColor: '#222',
-    padding: 16,
-    paddingBottom: 32,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  ctaButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-  },
-  ctaOutline: {
-    borderWidth: 1,
-    borderColor: '#4da3ff',
-    backgroundColor: 'transparent',
-  },
-  ctaOutlineText: {
-    color: '#4da3ff',
-    fontWeight: '600',
-  },
-  ctaPrimary: {
-    backgroundColor: '#25D366',
-  },
-  ctaPrimaryText: {
-    color: '#0a0a0a',
-    fontWeight: '700',
-  },
+  
 });
