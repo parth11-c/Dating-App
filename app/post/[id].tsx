@@ -1,144 +1,413 @@
 import React from "react";
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Alert, TextInput, Linking } from "react-native";
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Share, Linking } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams } from "expo-router";
 import { useStore } from "@/store";
-import * as Location from "expo-location";
+import { Ionicons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
+import { supabase } from "@/lib/supabase";
 
 export default function PostDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getPost, verifyVisit } = useStore();
+  const { getPost } = useStore();
   const post = id ? getPost(id) : undefined;
   const insets = useSafeAreaInsets();
+  
+  const [activeImageIndex, setActiveImageIndex] = React.useState(0);
+  const [seller, setSeller] = React.useState<{ name: string; avatar_url?: string } | null>(null);
 
-  const [lat, setLat] = React.useState("");
-  const [lon, setLon] = React.useState("");
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!post?.userId) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('name, avatar_url')
+        .eq('id', post.userId)
+        .single();
+      if (mounted) setSeller(data as any);
+    })();
+    return () => { mounted = false; };
+  }, [post?.userId]);
 
   if (!post) {
     return (
       <View style={styles.center}>
-        <Text style={styles.muted}>Post not found.</Text>
+        <Text style={styles.muted}>Product not found.</Text>
       </View>
     );
   }
 
-  const openInMaps = () => {
-    const { lat, lon } = post.location;
-    if ((lat === 0 && lon === 0) || !Number.isFinite(lat) || !Number.isFinite(lon)) {
-      Alert.alert("Location missing", "This post doesn't have a valid location saved. Please edit or recreate the post with correct coordinates.");
-      return;
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: `Check out this product: ${post.title} - ${post.description?.substring(0, 100)}...`,
+        url: `https://clgmart.com/products/${id}`,
+        title: post.title,
+      });
+    } catch (error) {
+      console.error('Error sharing:', error);
     }
-    const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
-    Linking.openURL(url).catch(() => {
-      Alert.alert("Unable to open maps", "Please try again or check your maps app.");
-    });
   };
 
-  const onVerify = async () => {
-    const latNum = Number(lat);
-    const lonNum = Number(lon);
-    if (Number.isNaN(latNum) || Number.isNaN(lonNum)) {
-      Alert.alert("Invalid", "Enter valid coordinates to verify your visit.");
-      return;
-    }
-    const res = await verifyVisit(post.id, { lat: latNum, lon: lonNum });
-    if (res.ok) Alert.alert("Verified", "You have been added to the visitors list.");
-    else Alert.alert("Not verified", res.reason);
+  const handleContactSeller = () => {
+    // In a real app, this would open a chat or call the seller
+    const phoneNumber = '+1234567890'; // Replace with actual seller's phone number
+    Linking.openURL(`tel:${phoneNumber}`);
   };
 
-  const useCurrentLocationToVerify = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permission needed", "We need location permission to verify your visit.");
-      return;
-    }
-    const pos = await Location.getCurrentPositionAsync({});
-    setLat(String(pos.coords.latitude));
-    setLon(String(pos.coords.longitude));
-    const res = await verifyVisit(post.id, { lat: pos.coords.latitude, lon: pos.coords.longitude });
-    if (res.ok) Alert.alert("Verified", "You have been added to the visitors list.");
-    else Alert.alert("Not verified", res.reason);
+  const handleWhatsApp = () => {
+    const message = `Hi, I'm interested in your product: ${post.title}`;
+    const url = `https://wa.me/1234567890?text=${encodeURIComponent(message)}`; // Replace with actual seller's WhatsApp number
+    WebBrowser.openBrowserAsync(url);
   };
+
+  // No direct buy on this screen for now
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]}>
-        <Image source={{ uri: post.imageUri }} style={styles.image} />
-        <Text style={styles.title}>{post.title}</Text>
-        {!!post.description && <Text style={styles.desc}>{post.description}</Text>}
-        <Text style={styles.meta}>
-          Created {new Date(post.createdAt).toLocaleString()} • Visitors {post.visitors.length}
-        </Text>
-        <Text style={styles.coords}>Coords: {post.location.lat.toFixed(6)}, {post.location.lon.toFixed(6)}</Text>
-        <TouchableOpacity style={styles.mapButton} onPress={openInMaps}>
-          <Text style={styles.mapButtonText}>Let's Go</Text>
-        </TouchableOpacity>
-
-        <View style={styles.verifyBox}>
-          <Text style={styles.section}>Verify your visit</Text>
-          <TouchableOpacity style={styles.secondaryButton} onPress={useCurrentLocationToVerify}>
-            <Text style={styles.secondaryButtonText}>Use Current Location to Verify</Text>
-          </TouchableOpacity>
-          <View style={styles.row}>
-            <TextInput
-              placeholder="Latitude"
-              placeholderTextColor="#777"
-              style={[styles.input, styles.half]}
-              keyboardType="decimal-pad"
-              value={lat}
-              onChangeText={setLat}
-            />
-            <TextInput
-              placeholder="Longitude"
-              placeholderTextColor="#777"
-              style={[styles.input, styles.half, { marginLeft: 8 }]}
-              keyboardType="decimal-pad"
-              value={lon}
-              onChangeText={setLon}
-            />
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]}>
+        {/* Image Gallery */}
+        <View style={styles.imageContainer}>
+          <Image 
+            source={{ uri: post.imageUri }} 
+            style={styles.image} 
+            resizeMode="cover"
+          />
+          {/* Image Pagination Dots */}
+          <View style={styles.imagePagination}>
+            {[1, 2, 3].map((_: number, idx: number) => (
+              <View
+                key={idx}
+                style={[
+                  styles.paginationDot,
+                  idx === activeImageIndex ? styles.paginationDotActive : undefined,
+                ]}
+              />
+            ))}
           </View>
-        <TouchableOpacity style={styles.button} onPress={onVerify}>
-          <Text style={styles.buttonText}>Scan & Verify</Text>
+        </View>
+
+        {/* Product Info */}
+        <View style={styles.productHeader}>
+          <View>
+            <Text style={styles.title}>{post.title}</Text>
+            <Text style={styles.category}>{post.category || 'General'}</Text>
+          </View>
+          <TouchableOpacity onPress={handleShare} style={styles.shareButton}>
+            <Ionicons name="share-social" size={20} color="#aaa" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Price and chips */}
+        <View style={styles.priceContainer}> 
+          <Text style={styles.price}>₹{post.price?.toFixed(2) || '0.00'}</Text>
+          <View style={styles.chipsRow}>
+            {post.condition ? (
+              <View style={styles.chip}><Text style={styles.chipText}>{post.condition}</Text></View>
+            ) : null}
+            {post.category ? (
+              <View style={styles.chipSecondary}><Text style={styles.chipSecondaryText}>{post.category}</Text></View>
+            ) : null}
+          </View>
+        </View>
+
+        {/* Spacing */}
+        <View style={{ height: 8 }} />
+
+        {/* Description */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Description</Text>
+          <Text style={styles.description}>
+            {post.description || 'No description provided.'}
+          </Text>
+        </View>
+
+        {/* Seller Info */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Seller Information</Text>
+          <View style={styles.sellerInfo}>
+            {seller?.avatar_url ? (
+              <Image source={{ uri: seller.avatar_url }} style={styles.sellerAvatarImage} />
+            ) : (
+              <View style={styles.sellerAvatar}> 
+                <Ionicons name="person" size={24} color="#aaa" />
+              </View>
+            )}
+            <View style={styles.sellerDetails}>
+              <Text style={styles.sellerName}>{seller?.name || 'Seller'}</Text>
+              <Text style={styles.sellerSub}>@{post.userId}</Text>
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Fixed Bottom Bar */}
+      <View style={[styles.bottomBar, { paddingBottom: insets.bottom }]}> 
+        <TouchableOpacity style={[styles.ctaButton, styles.ctaOutline]} onPress={handleContactSeller}>
+          <Ionicons name="chatbubble-ellipses" size={18} color="#4da3ff" />
+          <Text style={styles.ctaOutlineText}>Message</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.ctaButton, styles.ctaPrimary]} onPress={handleWhatsApp}>
+          <Ionicons name="logo-whatsapp" size={18} color="#0a0a0a" />
+          <Text style={styles.ctaPrimaryText}>WhatsApp</Text>
         </TouchableOpacity>
       </View>
-
-      <Text style={styles.section}>Visitors</Text>
-      {post.visitors.length === 0 ? (
-        <Text style={styles.muted}>No visitors yet.</Text>
-      ) : (
-        post.visitors.map((v) => (
-          <View key={`${v.userId}_${v.visitedAt}`} style={styles.visitor}>
-            <Text style={styles.text}>User {v.userId}</Text>
-            <Text style={styles.muted}>{new Date(v.visitedAt).toLocaleString()}</Text>
-          </View>
-        ))
-      )}
-      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a" },
-  content: { padding: 12 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0a0a0a" },
-  image: { width: "100%", height: 260, backgroundColor: "#222", borderRadius: 12 },
-  title: { color: "#fff", fontSize: 20, fontWeight: "700", marginTop: 12 },
-  desc: { color: "#ddd", marginTop: 8 },
-  meta: { color: "#aaa", marginTop: 8, marginBottom: 12 },
-  coords: { color: "#8ab4f8", marginTop: 2 },
-  section: { color: "#fff", fontSize: 16, fontWeight: "600", marginTop: 10, marginBottom: 6 },
-  verifyBox: { backgroundColor: "#111", borderColor: "#222", borderWidth: 1, borderRadius: 12, padding: 12 },
-  row: { flexDirection: "row" },
-  input: { backgroundColor: "#111", color: "#fff", borderColor: "#333", borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 10 },
-  half: { flex: 1 },
-  button: { backgroundColor: "#fff", paddingVertical: 12, borderRadius: 10, alignItems: "center", marginTop: 4 },
-  buttonText: { color: "#000", fontWeight: "600" },
-  mapButton: { backgroundColor: "#1a73e8", paddingVertical: 12, borderRadius: 10, alignItems: "center", marginTop: 8 },
-  mapButtonText: { color: "#fff", fontWeight: "600" },
-  secondaryButton: { backgroundColor: "#222", paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, borderColor: "#333", borderWidth: 1, marginBottom: 8 },
-  secondaryButtonText: { color: "#fff" },
-  text: { color: "#fff" },
-  muted: { color: "#9aa0a6" },
-  visitor: { paddingVertical: 8, borderBottomColor: "#222", borderBottomWidth: 1 },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#0a0a0a',
+  },
+  content: {
+    padding: 16,
+    paddingBottom: 120, // Extra padding for bottom bar
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0a0a0a',
+  },
+  muted: {
+    color: '#aaa',
+    fontSize: 16,
+  },
+  imageContainer: {
+    width: '100%',
+    height: 300,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#111',
+    marginBottom: 16,
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  imagePagination: {
+    position: 'absolute',
+    bottom: 16,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  paginationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    marginHorizontal: 4,
+  },
+  paginationDotActive: {
+    backgroundColor: '#fff',
+  },
+  productHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  category: {
+    fontSize: 12,
+    color: '#aaa',
+  },
+  shareButton: {
+    padding: 8,
+  },
+  priceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  price: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginRight: 12,
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chip: {
+    backgroundColor: '#132a17',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginRight: 8,
+  },
+  chipText: {
+    color: '#7ddc7a',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  chipSecondary: {
+    backgroundColor: '#141414',
+    borderWidth: 1,
+    borderColor: '#222',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  chipSecondaryText: {
+    color: '#bbb',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  conditionBadge: {
+    backgroundColor: '#132a17',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  conditionText: {
+    color: '#7ddc7a',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  quantityContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  quantityLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#ddd',
+  },
+  quantitySelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#222',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  quantityButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#111',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quantityButtonText: {
+    fontSize: 20,
+    color: '#fff',
+  },
+  quantityText: {
+    fontSize: 18,
+    fontWeight: '500',
+    marginHorizontal: 16,
+    color: '#fff',
+  },
+  sectionContainer: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ddd',
+    marginBottom: 8,
+  },
+  description: {
+    fontSize: 14,
+    color: '#bbb',
+    lineHeight: 22,
+  },
+  sellerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  sellerDetails: {
+    flex: 1,
+  },
+  sellerAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#111',
+    marginRight: 12,
+  },
+  sellerAvatarImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 12,
+  },
+  sellerInfo: {
+    flex: 1,
+  },
+  sellerName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#fff',
+    marginBottom: 2,
+  },
+  sellerSub: {
+    color: '#888',
+    fontSize: 12,
+  },
+  sellerRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ratingText: {
+    marginLeft: 4,
+    color: '#aaa',
+    fontSize: 14,
+  },
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#0d0d0d',
+    borderTopWidth: 1,
+    borderTopColor: '#222',
+    padding: 16,
+    paddingBottom: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  ctaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+  },
+  ctaOutline: {
+    borderWidth: 1,
+    borderColor: '#4da3ff',
+    backgroundColor: 'transparent',
+  },
+  ctaOutlineText: {
+    color: '#4da3ff',
+    fontWeight: '600',
+  },
+  ctaPrimary: {
+    backgroundColor: '#25D366',
+  },
+  ctaPrimaryText: {
+    color: '#0a0a0a',
+    fontWeight: '700',
+  },
 });

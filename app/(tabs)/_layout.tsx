@@ -35,13 +35,15 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <FontAwesome name="plus-square" color={color} size={size} />,
         }}
       />
-      <Tabs.Screen
-        name="maps"
-        options={{
-          title: "Maps",
-          tabBarIcon: ({ color, size }) => <FontAwesome name="map" color={color} size={size} />,
-        }}
-      />
+<Tabs.Screen
+  name="message"
+  options={{
+    title: "Messages",
+    tabBarIcon: ({ color, size }) => (
+      <FontAwesome name="comments" color={color} size={size} />
+    ),
+  }}
+/>
       <Tabs.Screen
         name="profile"
         options={{

@@ -1,17 +1,38 @@
-import React from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, Image } from "react-native";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, Image, Platform, KeyboardAvoidingView } from "react-native";
 import { useStore } from "@/store";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import * as Location from "expo-location";
+import * as ImageManipulator from 'expo-image-manipulator';
+import { Ionicons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker';
+
+const CONDITIONS = [
+  'New',
+  'Like New',
+  'Good',
+  'Fair',
+  'Poor'
+] as const;
+type Condition = typeof CONDITIONS[number];
+
+const CATEGORIES = [
+  'Electronics',
+  'Furniture',
+  'Books',
+  'Clothing',
+  'Other'
+];
 
 export default function PostScreen() {
   const { createPost } = useStore();
-  const [title, setTitle] = React.useState("");
-  const [description, setDescription] = React.useState("");
-  const [imageUri, setImageUri] = React.useState("");
-  const [lat, setLat] = React.useState("");
-  const [lon, setLon] = React.useState("");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [price, setPrice] = useState("");
+  const [condition, setCondition] = useState<Condition>(CONDITIONS[0]);
+  const [category, setCategory] = useState(CATEGORIES[0]);
+  const [imageUri, setImageUri] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const extractGpsFromExif = (exif: any): { lat?: number; lon?: number } => {
     if (!exif) return {};
@@ -25,135 +46,307 @@ export default function PostScreen() {
     return {};
   };
 
-  const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permission needed", "We need camera permission to take a photo.");
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      quality: 1,
-      exif: true,
-    });
-    if (result.canceled) return;
-    const asset = result.assets?.[0];
-    if (!asset) return;
-    setImageUri(asset.uri ?? "");
-    const { lat: exLat, lon: exLon } = extractGpsFromExif(asset.exif);
-    if (typeof exLat === "number" && typeof exLon === "number") {
-      setLat(String(exLat));
-      setLon(String(exLon));
-      Alert.alert("Location detected", "GPS coordinates extracted from image EXIF.");
-    }
-  };
-
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
       Alert.alert("Permission needed", "We need photo library permission to pick an image.");
       return;
     }
+    
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 1,
-      exif: true,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.7,
     });
-    if (result.canceled) return;
-    const asset = result.assets?.[0];
-    if (!asset) return;
-    setImageUri(asset.uri ?? "");
-    const { lat: exLat, lon: exLon } = extractGpsFromExif(asset.exif);
-    if (typeof exLat === "number" && typeof exLon === "number") {
-      setLat(String(exLat));
-      setLon(String(exLon));
-      Alert.alert("Location detected", "GPS coordinates extracted from image EXIF.");
-    } else {
-      // No EXIF GPS
-    }
-  };
 
-  const useCurrentLocation = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permission needed", "We need location permission to fill your current coordinates.");
-      return;
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      // Resize the image to a reasonable size
+      const manipResult = await ImageManipulator.manipulateAsync(
+        result.assets[0].uri,
+        [{ resize: { width: 800 } }],
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+      );
+      setImageUri(manipResult.uri);
     }
-    const pos = await Location.getCurrentPositionAsync({});
-    setLat(String(pos.coords.latitude));
-    setLon(String(pos.coords.longitude));
   };
 
   const onSubmit = async () => {
-    const latNum = Number(lat);
-    const lonNum = Number(lon);
-    if (!title || !imageUri || Number.isNaN(latNum) || Number.isNaN(lonNum)) {
-      Alert.alert("Incomplete", "Please enter title, image URL, and valid coordinates.");
+    if (!title || !price || !imageUri) {
+      Alert.alert("Incomplete", "Please fill in all required fields and add a photo.");
       return;
     }
-    const res = await createPost({
-      title,
-      description: description || undefined,
-      imageUri,
-      location: { lat: latNum, lon: lonNum },
-    } as any);
-    if (res.ok) {
-      router.push(`/post/${res.id}` as any);
-    } else {
-      Alert.alert("Cannot create post", res.reason);
+    
+    setIsLoading(true);
+    try {
+      const res = await createPost({
+        title,
+        description: description || undefined,
+        price: parseFloat(price),
+        condition,
+        category,
+        imageUri,
+      });
+      
+      if (res.ok) {
+        router.push(`/post/${res.id}` as any);
+      } else {
+        Alert.alert("Error", res.reason || "Failed to create listing. Please try again.");
+      }
+    } catch (error) {
+      console.error('Error creating post:', error);
+      Alert.alert("Error", "An unexpected error occurred. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.heading}>Create a new place</Text>
-      <View style={{ flexDirection: "row", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-        <TouchableOpacity style={styles.secondaryButton} onPress={pickImage}>
-          <Text style={styles.secondaryButtonText}>Pick Image</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryButton} onPress={takePhoto}>
-          <Text style={styles.secondaryButtonText}>Take Photo</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryButton} onPress={useCurrentLocation}>
-          <Text style={styles.secondaryButtonText}>Use Current Location</Text>
-        </TouchableOpacity>
-      </View>
-      {imageUri ? (
-        <View style={{ marginBottom: 10 }}>
-          <Text style={{ color: "#aaa", marginBottom: 6 }}>Preview</Text>
-          <View style={{ borderRadius: 10, overflow: "hidden", borderColor: "#222", borderWidth: 1 }}>
-            <Image source={{ uri: imageUri }} style={{ width: "100%", height: 160, backgroundColor: "#222" }} />
+    <KeyboardAvoidingView 
+      style={{ flex: 1, backgroundColor: '#0a0a0a' }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={90}
+    >
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <Text style={styles.heading}>Sell an Item</Text>
+        
+        {/* Image Upload */}
+        <View style={styles.imageUploadContainer}>
+          {imageUri ? (
+            <TouchableOpacity onPress={pickImage} style={styles.imagePreview}>
+              <Image 
+                source={{ uri: imageUri }} 
+                style={styles.previewImage} 
+                resizeMode="cover"
+              />
+              <View style={styles.changePhotoButton}>
+                <Ionicons name="camera" size={20} color="#fff" />
+                <Text style={styles.changePhotoText}>Change Photo</Text>
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.addPhotoButton} onPress={pickImage}>
+              <Ionicons name="camera" size={32} color="#666" />
+              <Text style={styles.addPhotoText}>Add Photo</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        
+        {/* Form Fields */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Item Name*</Text>
+          <TextInput 
+            placeholder="What are you selling?" 
+            placeholderTextColor="#888" 
+            style={styles.input} 
+            value={title} 
+            onChangeText={setTitle} 
+          />
+        </View>
+        
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Price*</Text>
+          <View style={styles.priceInputContainer}>
+            <Text style={styles.currencySymbol}>₹</Text>
+            <TextInput
+              placeholder="0.00"
+              placeholderTextColor="#888"
+              style={[styles.input, styles.priceInput]}
+              keyboardType="decimal-pad"
+              value={price}
+              onChangeText={setPrice}
+            />
           </View>
         </View>
-      ) : null}
-      <TextInput placeholder="Title" placeholderTextColor="#777" style={styles.input} value={title} onChangeText={setTitle} />
-      <TextInput placeholder="Description (optional)" placeholderTextColor="#777" style={[styles.input, styles.multiline]} value={description} onChangeText={setDescription} multiline numberOfLines={4} />
-      <TextInput placeholder="Image URL (or use Pick Image)" placeholderTextColor="#777" style={styles.input} value={imageUri} onChangeText={setImageUri} />
-      <View style={styles.row}>
-        <TextInput placeholder="Latitude" placeholderTextColor="#777" style={[styles.input, styles.half]} keyboardType="decimal-pad" value={lat} onChangeText={setLat} />
-        <TextInput placeholder="Longitude" placeholderTextColor="#777" style={[styles.input, styles.half, { marginLeft: 8 }]} keyboardType="decimal-pad" value={lon} onChangeText={setLon} />
-      </View>
-      <TouchableOpacity style={styles.button} onPress={onSubmit}>
-        <Text style={styles.buttonText}>Publish</Text>
-      </TouchableOpacity>
-      <Text style={styles.hint}>
-        Tip: In a later version, we'll auto-extract the location from the image's EXIF or use current GPS.
-      </Text>
-    </ScrollView>
+        
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Condition*</Text>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={condition}
+              onValueChange={(itemValue) => setCondition(itemValue as Condition)}
+              style={styles.picker}
+              dropdownIconColor="#666"
+            >
+              {CONDITIONS.map((cond) => (
+                <Picker.Item key={cond} label={cond} value={cond} />
+              ))}
+            </Picker>
+          </View>
+        </View>
+        
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Category*</Text>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={category}
+              onValueChange={(itemValue) => setCategory(itemValue)}
+              style={styles.picker}
+              dropdownIconColor="#666"
+            >
+              {CATEGORIES.map((cat) => (
+                <Picker.Item key={cat} label={cat} value={cat} />
+              ))}
+            </Picker>
+          </View>
+        </View>
+        
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Description (optional)</Text>
+          <TextInput
+            placeholder="Include details like size, brand, color, etc."
+            placeholderTextColor="#888"
+            style={[styles.input, styles.textArea]}
+            multiline
+            numberOfLines={4}
+            value={description}
+            onChangeText={setDescription}
+          />
+        </View>
+        
+        <TouchableOpacity 
+          style={[styles.submitButton, isLoading && styles.submitButtonDisabled]} 
+          onPress={onSubmit}
+          disabled={isLoading}
+        >
+          <Text style={styles.submitButtonText}>{isLoading ? 'Posting…' : 'Post Item'}</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0a0a0a" },
-  content: { padding: 16 },
-  heading: { color: "#fff", fontSize: 18, fontWeight: "600", marginBottom: 12 },
-  input: { backgroundColor: "#111", color: "#fff", borderColor: "#222", borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 10 },
-  multiline: { textAlignVertical: "top" },
-  row: { flexDirection: "row" },
-  half: { flex: 1 },
-  button: { backgroundColor: "#fff", paddingVertical: 12, borderRadius: 10, alignItems: "center", marginTop: 8 },
-  buttonText: { color: "#000", fontWeight: "600" },
-  hint: { color: "#888", marginTop: 12, fontSize: 12 },
-  secondaryButton: { backgroundColor: "#222", paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, borderColor: "#333", borderWidth: 1 },
-  secondaryButtonText: { color: "#fff" },
-});
+  content: { padding: 20, paddingBottom: 40 },
+  heading: { fontSize: 22, fontWeight: '700', marginBottom: 24, color: '#fff' },
+  imageUploadContainer: {
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  addPhotoButton: {
+    width: '100%',
+    height: 180,
+    borderWidth: 1,
+    borderColor: '#222',
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#111',
+  },
+  addPhotoText: {
+    marginTop: 8,
+    color: '#aaa',
+    fontSize: 16,
+  },
+  imagePreview: {
+    width: '100%',
+    height: 220,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#111',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  changePhotoButton: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    alignItems: 'center',
+  },
+  changePhotoText: {
+    color: '#fff',
+    marginLeft: 6,
+    fontSize: 14,
+  },
+  formGroup: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+    color: '#ddd',
+  },
+  input: {
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#222',
+    borderRadius: 10,
+    padding: 14,
+    fontSize: 16,
+    color: '#fff',
+  },
+  priceInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#222',
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  currencySymbol: {
+    paddingHorizontal: 14,
+    fontSize: 16,
+    color: '#aaa',
+    backgroundColor: '#161616',
+    height: '100%',
+    textAlignVertical: 'center',
+  },
+  priceInput: {
+    flex: 1,
+    borderWidth: 0,
+    borderLeftWidth: 1,
+    borderColor: '#222',
+    borderRadius: 0,
+    marginBottom: 0,
+    paddingLeft: 12,
+  },
+  pickerContainer: {
+    borderWidth: 1,
+    borderColor: '#222',
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#111',
+  },
+  picker: {
+    height: 50,
+    color: '#fff',
+  },
+  textArea: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  submitButton: {
+    backgroundColor: '#4da3ff',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#2b5e91',
+  },
+  submitButtonText: {
+    color: '#0a0a0a',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  row: { 
+    flexDirection: 'row' 
+  },
+  half: { 
+    flex: 1 
+  },
+})
+;
 

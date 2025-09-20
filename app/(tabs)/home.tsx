@@ -12,7 +12,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container}>
       {posts.length === 0 ? (
         <View style={styles.emptyWrap}>
-          <Text style={styles.text}>No posts yet. Be the first to share a place!</Text>
+          <Text style={styles.text}>No products yet. Be the first to list an item!</Text>
         </View>
       ) : (
         <FlatList
@@ -24,9 +24,8 @@ export default function HomeScreen() {
               <Image source={{ uri: item.imageUri }} style={styles.image} />
               <View style={styles.cardBody}>
                 <Text style={styles.title}>{item.title}</Text>
-                <Text style={styles.meta}>
-                  {new Date(item.createdAt).toLocaleString()} • Visitors {item.visitors.length}
-                </Text>
+                <Text style={styles.meta}>₹{item.price?.toFixed?.(2) ?? item.price} • {item.condition} • {item.category}</Text>
+                <Text style={styles.metaSmall}>{new Date(item.createdAt).toLocaleDateString()} • {item.status?.toUpperCase?.() || 'ACTIVE'}</Text>
                 <TouchableOpacity onPress={() => router.push(`/profile/${item.userId}` as any)}>
                   <Text style={styles.link}>View author</Text>
                 </TouchableOpacity>
@@ -48,6 +47,7 @@ const styles = StyleSheet.create({
   image: { width: "100%", height: 180, backgroundColor: "#222" },
   cardBody: { padding: 12 },
   title: { color: "#fff", fontSize: 16, fontWeight: "600", marginBottom: 6 },
-  meta: { color: "#aaa", fontSize: 12, marginBottom: 8 },
+  meta: { color: "#aaa", fontSize: 12 },
+  metaSmall: { color: "#888", fontSize: 11, marginBottom: 8, marginTop: 2 },
   link: { color: "#4da3ff" },
 });
