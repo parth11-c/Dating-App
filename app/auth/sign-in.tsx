@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { fontSizes, responsiveValue, buttonDimensions, shadows } from "../../lib/responsive";
 import { useStore } from "@/store";
+import { supabase } from "@/lib/supabase";
 
 export default function SignInScreen() {
   const { signIn } = useStore();
@@ -22,9 +23,13 @@ export default function SignInScreen() {
     try {
       setLoading(true);
       const res = await signIn(email, password);
+      if (!res.ok) {
+        setLoading(false);
+        return Alert.alert("Sign in failed", res.reason);
+      }
       setLoading(false);
-      if (!res.ok) return Alert.alert("Sign in failed", res.reason);
-      router.replace("/(tabs)/home" as any);
+      // Always send user to Profile edit first
+      router.replace('/(tabs)/profile?edit=1' as any);
     } catch (e: any) {
       setLoading(false);
       Alert.alert("Error", e?.message ?? "Something went wrong");

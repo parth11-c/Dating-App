@@ -12,7 +12,10 @@ export default function EditProfileScreen() {
 
   const [name, setName] = useState<string>(currentUser.name || '');
   const [avatarUri, setAvatarUri] = useState<string | null | undefined>(currentUser.avatar);
-  const [phone, setPhone] = useState<string>(currentUser.phone || '');
+  const [bio, setBio] = useState<string>('');
+  const [gender, setGender] = useState<'male' | 'female' | 'non-binary' | 'other' | ''>('');
+  const [dob, setDob] = useState<string>(''); // YYYY-MM-DD
+  const [location, setLocation] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
 
   const pickImage = async () => {
@@ -39,26 +42,10 @@ export default function EditProfileScreen() {
       Alert.alert('Name required', 'Please enter your name.');
       return;
     }
-    // Normalize and validate phone: default to +91 if no country code provided
-    const rawPhone = phone.trim();
-    let normalizedPhone: string | undefined = undefined;
-    if (rawPhone) {
-      if (rawPhone.startsWith('+')) {
-        const digits = rawPhone.slice(1).replace(/\D+/g, '');
-        normalizedPhone = '+' + digits;
-      } else {
-        const digits = rawPhone.replace(/\D+/g, '');
-        // Default to India country code
-        normalizedPhone = '+91' + digits;
-      }
-      if (!/^\+\d{7,15}$/.test(normalizedPhone)) {
-        Alert.alert('Invalid phone number', 'Enter a valid number. If you omit country code, we will default to +91.');
-        return;
-      }
-    }
     setIsSaving(true);
     try {
-      const res = await updateProfile({ name: name.trim(), phone: normalizedPhone || undefined, avatarUri });
+      // updateProfile currently supports name and avatar upload. We'll persist bio/gender/dob/location in Profile tab save.
+      const res = await updateProfile({ name: name.trim(), avatarUri });
       if (!res.ok) {
         Alert.alert('Error', res.reason || 'Failed to update profile.');
       } else {
@@ -114,17 +101,46 @@ export default function EditProfileScreen() {
           />
         </View>
 
-        {/* Phone */}
+        {/* Bio, Gender, DOB, Location (basic inputs to stage values; saving is currently done in main profile screen) */}
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Phone number (WhatsApp)</Text>
+          <Text style={styles.label}>Bio</Text>
           <TextInput
-            placeholder="e.g. +91 98765 43210"
+            placeholder="Tell something about you"
+            placeholderTextColor="#888"
+            style={[styles.input, { minHeight: 80 }]}
+            multiline
+            value={bio}
+            onChangeText={setBio}
+          />
+        </View>
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Gender</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {(['male','female','non-binary','other'] as const).map(g => (
+              <TouchableOpacity key={g} style={[styles.pill, gender === g && styles.pillActive]} onPress={() => setGender(g)}>
+                <Text style={[styles.pillText, gender === g && styles.pillTextActive]}>{g}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Date of birth</Text>
+          <TextInput
+            placeholder="YYYY-MM-DD"
             placeholderTextColor="#888"
             style={styles.input}
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-            autoComplete="tel"
+            value={dob}
+            onChangeText={setDob}
+          />
+        </View>
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Location</Text>
+          <TextInput
+            placeholder="City"
+            placeholderTextColor="#888"
+            style={styles.input}
+            value={location}
+            onChangeText={setLocation}
           />
         </View>
 
@@ -156,6 +172,10 @@ const styles = StyleSheet.create({
   formGroup: { marginBottom: 16 },
   label: { color: '#ddd', marginBottom: 8, fontWeight: '600' },
   input: { backgroundColor: '#111', borderColor: '#222', borderWidth: 1, borderRadius: 10, padding: 12, color: '#fff' },
+  pill: { backgroundColor: '#0f0f10', borderWidth: 1, borderColor: '#1f1f22', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999 },
+  pillActive: { backgroundColor: '#1a2b3d', borderColor: '#2a5b86' },
+  pillText: { color: '#9aa0a6', fontSize: 12, fontWeight: '700' },
+  pillTextActive: { color: '#cce6ff' },
   btn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: '#4da3ff', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10 },
   btnText: { color: '#4da3ff', fontWeight: '600' },
   btnDanger: { backgroundColor: '#cc3333', borderColor: '#cc3333' },

@@ -1,40 +1,40 @@
 import React from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert, Linking } from "react-native";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert, ActivityIndicator } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useStore } from "@/store";
 import { router } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { Ionicons } from "@expo/vector-icons";
-import * as WebBrowser from 'expo-web-browser';
+import { useStore } from "@/store";
+
+type Profile = {
+  id: string;
+  name: string;
+  bio: string | null;
+  gender: 'male' | 'female' | 'non-binary' | 'other' | null;
+  date_of_birth: string | null;
+  location: string | null;
+  avatar_url: string | null;
+  photos?: { id: number; image_url: string }[];
+};
+
+function ageFromDob(dobIso?: string | null) {
+  if (!dobIso) return undefined;
+  const dob = new Date(dobIso);
+  if (isNaN(dob.getTime())) return undefined;
+  const now = new Date();
+  let age = now.getFullYear() - dob.getFullYear();
+  const m = now.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
+  return age;
+}
 
 export default function UserProfileViewScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { userPosts } = useStore();
   const insets = useSafeAreaInsets();
-  const [profile, setProfile] = React.useState<{ name?: string; avatar_url?: string; phone?: string } | null>(null);
-
-  const formatPhone = (raw?: string) => {
-    if (!raw) return '';
-    const m = raw.match(/^(\+\d{1,2})(\d{3,11})$/);
-    if (!m) return raw;
-    const cc = m[1];
-    const digits = m[2];
-    if (cc === '+91' && digits.length === 10) {
-      return `${cc} ${digits.slice(0,5)} ${digits.slice(5)}`;
-    }
-    if (cc === '+1' && digits.length === 10) {
-      return `${cc} ${digits.slice(0,3)} ${digits.slice(3,6)} ${digits.slice(6)}`;
-    }
-    const parts: string[] = [];
-    let rest = digits;
-    while (rest.length > 4) {
-      parts.push(rest.slice(0,3));
-      rest = rest.slice(3);
-    }
-    parts.push(rest);
-    return `${cc} ${parts.join(' ')}`.trim();
-  };
+  const { currentUser } = useStore();
+  const [loading, setLoading] = React.useState(true);
+  const [profile, setProfile] = React.useState<Profile | null>(null);
 
   if (!id) {
     return (
@@ -44,42 +44,69 @@ export default function UserProfileViewScreen() {
     );
   }
 
-  const posts = userPosts(id);
-
   React.useEffect(() => {
     let mounted = true;
     (async () => {
       if (!id) return;
-      const { data } = await supabase.from('profiles').select('name, avatar_url, phone').eq('id', id).single();
-      if (mounted) setProfile(data as any);
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, name, bio, gender, date_of_birth, location, avatar_url, photos ( id, image_url )')
+        .eq('id', id)
+        .single();
+      if (!error && mounted) setProfile(data as any);
     })();
     return () => { mounted = false; };
   }, [id]);
 
-  const handleCall = () => {
-    const phoneNumber = profile?.phone?.replace(/\s+/g, '');
-    if (!phoneNumber) {
-      Alert.alert('No phone number', 'This user has not added a phone number yet.');
-      return;
+  const handleLike = async () => {
+    try {
+      if (!currentUser?.id) {
+        Alert.alert('Sign in required', 'Please sign in to like profiles.');
+        return;
+      }
+      const { error } = await supabase.from('likes').insert({ liker_id: currentUser.id, liked_id: id });
+      if (error) {
+        Alert.alert('Could not like', error.message);
+        return;
+      }
+      Alert.alert('Liked', 'We will let you know if it’s a match.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Something went wrong.');
     }
-    Linking.openURL(`tel:${phoneNumber}`);
   };
 
-  const handleWhatsApp = () => {
-    const message = `Hi, I found your profile on ClgMart.`;
-    const raw = profile?.phone?.trim();
-    if (!raw) {
-      Alert.alert('WhatsApp unavailable', 'This user has not added a WhatsApp number yet.');
-      return;
+  const handleMessage = async () => {
+    try {
+      if (!currentUser?.id || !id) return;
+      // Find existing match between current user and this profile
+      const pair = [currentUser.id as string, id as string].sort();
+      const { data: ms, error } = await supabase
+        .from('matches')
+        .select('id, user1_id, user2_id')
+        .or(`and(user1_id.eq.${pair[0]},user2_id.eq.${pair[1]}),and(user1_id.eq.${pair[1]},user2_id.eq.${pair[0]})`)
+        .maybeSingle();
+      if (error) {
+        Alert.alert('Error', error.message);
+        return;
+      }
+      if (!ms) {
+        Alert.alert('No match yet', 'You can message after you both like each other.');
+        return;
+      }
+      router.push(`/chat/${ms.id}` as any);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Unable to open chat');
     }
-    const digits = raw.replace(/\D+/g, '');
-    if (!digits) {
-      Alert.alert('Invalid number', 'The user phone number appears invalid.');
-      return;
-    }
-    const url = `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
-    WebBrowser.openBrowserAsync(url);
   };
+
+  if (loading && !profile) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color="#fff" />
+        <Text style={styles.muted}>Loading…</Text>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -92,48 +119,65 @@ export default function UserProfileViewScreen() {
           )}
           <View style={{ flex: 1 }}>
             <Text style={styles.name}>{profile?.name || 'User'}</Text>
-            <Text style={styles.sub}>{formatPhone(profile?.phone) || 'WhatsApp not added'}</Text>
+            <Text style={styles.sub} numberOfLines={1}>
+              {[profile?.location, (p => { const a = ageFromDob(p?.date_of_birth); return typeof a === 'number' ? `${a}` : undefined; })(profile)].filter(Boolean).join(' • ')}
+            </Text>
           </View>
         </View>
-        {/* Actions (match profile page but Edit -> Message) */}
+        {/* Actions */}
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.editBtn} onPress={() => router.push(`/message/${id}` as any)}>
+          <TouchableOpacity style={styles.likeBtn} onPress={handleLike}>
+            <Ionicons name="heart" size={16} color="#ff5b80" />
+            <Text style={styles.likeBtnText}>Like</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.editBtn} onPress={handleMessage}>
             <Ionicons name="chatbubble-ellipses" size={16} color="#4da3ff" />
             <Text style={styles.editBtnText}>Message</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.wpBtn} onPress={handleWhatsApp}>
-            <Ionicons name="logo-whatsapp" size={16} color="#1f3124" />
-            <Text style={styles.wpBtnText}>WhatsApp</Text>
           </TouchableOpacity>
         </View>
       </View>
       <View style={styles.divider} />
 
-      <View style={styles.sectionRow}>
-        <Text style={styles.section}>Products</Text>
-        <View style={styles.countBadge}><Text style={styles.countBadgeText}>{posts.length}</Text></View>
+      {/* About */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>About</Text>
+        {profile?.bio ? (
+          <Text style={styles.bodyText}>{profile.bio}</Text>
+        ) : (
+          <Text style={styles.mutedSmall}>No bio added.</Text>
+        )}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+          {profile?.gender ? (
+            <View style={styles.pill}><Text style={styles.pillText}>{profile.gender}</Text></View>
+          ) : null}
+          {profile?.date_of_birth ? (
+            <View style={styles.pill}><Text style={styles.pillText}>DOB: {profile.date_of_birth}</Text></View>
+          ) : null}
+          {profile?.location ? (
+            <View style={styles.pill}><Text style={styles.pillText}>{profile.location}</Text></View>
+          ) : null}
+        </View>
       </View>
-      {posts.length === 0 ? (
-        <Text style={styles.muted}>No posts yet.</Text>
+
+      {/* Photos */}
+      <View style={styles.sectionRow}>
+        <Text style={styles.section}>Photos</Text>
+        <View style={styles.countBadge}><Text style={styles.countBadgeText}>{profile?.photos?.length || 0}</Text></View>
+      </View>
+      {(profile?.photos?.length || 0) === 0 ? (
+        <Text style={styles.muted}>No photos.</Text>
       ) : (
         <FlatList
-          key={'grid-2'}
-          data={posts}
-          keyExtractor={(item) => item.id}
-          numColumns={2}
+          key={'photos-3'}
+          data={profile?.photos || []}
+          keyExtractor={(item) => String(item.id)}
+          numColumns={3}
           columnWrapperStyle={styles.gridRow}
-          contentContainerStyle={[styles.gridContent, { paddingBottom: insets.bottom + 100 }]}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.gridContent, { paddingBottom: insets.bottom + 60 }]}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.gridItem} onPress={() => router.push(`/post/${item.id}` as any)}>
-              <Image source={{ uri: item.imageUri }} style={styles.gridImage} resizeMode="cover" />
-              <View style={styles.gridFooter}>
-                <Text style={styles.gridTitle} numberOfLines={1}>{(item as any).title || 'Product'}</Text>
-                {!!(item as any).price && (
-                  <Text style={styles.gridPrice}>₹{Number((item as any).price).toFixed(0)}</Text>
-                )}
-              </View>
-            </TouchableOpacity>
+            <View style={[styles.gridItem, { width: '32%' }]}>
+              <Image source={{ uri: item.image_url }} style={{ width: '100%', aspectRatio: 1 }} />
+            </View>
           )}
         />
       )}
@@ -167,6 +211,7 @@ const styles = StyleSheet.create({
   muted: { color: "#9aa0a6" },
   card: { backgroundColor: "#111", borderColor: "#222", borderWidth: 1, borderRadius: 10, padding: 16, marginBottom: 8 },
   cardTitle: { color: "#fff", fontWeight: "600", marginBottom: 4 },
+  bodyText: { color: '#ddd' },
   mutedSmall: { color: "#888", fontSize: 12 },
   actions: { gap: 10 },
   divider: { height: 1, backgroundColor: '#141414', borderBottomColor: '#1f1f1f', borderBottomWidth: 1, marginVertical: 8 },
@@ -175,6 +220,8 @@ const styles = StyleSheet.create({
   countBadgeText: { color: '#a6b1b8', fontSize: 12, fontWeight: '700' },
   editBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', backgroundColor: '#0f1b28', borderWidth: 1, borderColor: '#2a5b86', paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10 },
   editBtnText: { color: '#4da3ff', fontWeight: '700' },
+  likeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', backgroundColor: '#1a0f14', borderWidth: 1, borderColor: '#2a1a22', paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10 },
+  likeBtnText: { color: '#ff5b80', fontWeight: '800' },
   gridContent: { paddingTop: 8 },
   gridRow: { justifyContent: 'space-between', marginBottom: 8 },
   gridItem: {
@@ -192,9 +239,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   gridImage: { width: '100%', aspectRatio: 1 },
-  gridFooter: { paddingHorizontal: 8, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  gridTitle: { color: '#eee', fontSize: 12, flex: 1, marginRight: 6, fontWeight: '600' },
-  gridPrice: { color: '#7ddc7a', fontSize: 12, fontWeight: '800' },
-  wpBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', backgroundColor: '#25D366', paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: '#199e4d' },
-  wpBtnText: { color: '#1f3124', fontWeight: '800' },
+  pill: { backgroundColor: '#121417', borderColor: '#1f2329', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  pillText: { color: '#a6b1b8', fontSize: 12, fontWeight: '700' },
 });

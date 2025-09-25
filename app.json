@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "travel",
-    "slug": "travel",
+    "name": "DateAPP",
+    "slug": "Date",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -24,7 +24,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.parth1127.DateApp"
     },
     "web": {
       "output": "static",
@@ -48,6 +49,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "49a4d659-10a8-41a3-8e05-90760037a22e"
+      }
     }
   }
 }

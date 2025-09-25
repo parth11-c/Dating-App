@@ -1,88 +1,180 @@
 import React from "react";
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Alert, Linking } from "react-native";
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useStore } from "@/store";
 import { router } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-type Post = ReturnType<typeof useStore>["posts"][number];
+type Profile = {
+  id: string;
+  name: string;
+  gender: 'male' | 'female' | 'non-binary' | 'other' | null;
+  date_of_birth: string; // ISO date
+  bio?: string | null;
+  avatar_url?: string | null;
+  location?: string | null;
+  photos?: { image_url: string }[];
+};
 
-function PostCard({ item }: { item: Post }) {
-  const [seller, setSeller] = React.useState<{ name?: string; avatar_url?: string; phone?: string } | null>(null);
-  React.useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const { data } = await supabase
-        .from('profiles')
-        .select('name, avatar_url, phone')
-        .eq('id', item.userId)
-        .single();
-      if (mounted) setSeller(data as any);
-    })();
-    return () => { mounted = false; };
-  }, [item.userId]);
+function ageFromDob(dobIso?: string) {
+  if (!dobIso) return undefined;
+  const dob = new Date(dobIso);
+  if (isNaN(dob.getTime())) return undefined;
+  const now = new Date();
+  let age = now.getFullYear() - dob.getFullYear();
+  const m = now.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
+  return age;
+}
 
-  const handleWhatsApp = () => {
-    const message = `Hi, I'm interested in your product: ${item.title}`;
-    const raw = seller?.phone?.trim();
-    if (!raw) {
-      Alert.alert('WhatsApp unavailable', 'The seller has not added a WhatsApp number yet.');
-      return;
-    }
-    const digits = raw.replace(/\D+/g, '');
-    if (!digits) {
-      Alert.alert('Invalid number', 'The seller phone number appears invalid.');
-      return;
-    }
-    const url = `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
-    Linking.openURL(url).catch((e) => Alert.alert('Cannot open WhatsApp', e?.message || 'Please try again.'));
-  };
-
+function ProfileCard({ p, onLike }: { p: Profile; onLike: (id: string) => void }) {
+  const cover = p.photos?.[0]?.image_url || p.avatar_url || undefined;
+  const age = ageFromDob(p.date_of_birth);
   return (
-    <TouchableOpacity style={styles.card} onPress={() => router.push(`/post/${item.id}` as any)}>
-      <View style={styles.imageWrap}>
-        <Image source={{ uri: item.imageUri }} style={styles.image} />
-        <View style={styles.imageOverlay} />
-        <View style={styles.priceBadge}><Text style={styles.priceBadgeText}>₹{item.price?.toFixed?.(0) ?? item.price}</Text></View>
-      </View>
+    <View style={styles.card}>
+      <TouchableOpacity onPress={() => router.push(`/profile/${p.id}` as any)}>
+        <View style={styles.imageWrap}>
+          {cover ? (
+            <Image source={{ uri: cover }} style={styles.image} />
+          ) : (
+            <View style={[styles.image, { alignItems: 'center', justifyContent: 'center' }]}>
+              <Ionicons name="person" size={48} color="#444" />
+            </View>
+          )}
+          <View style={styles.imageOverlay} />
+        </View>
+      </TouchableOpacity>
       <View style={styles.cardBody}>
-        <Text style={styles.title} numberOfLines={1}>{item.title}</Text>
-        <Text style={styles.meta} numberOfLines={1}>{item.category} • {String(item.condition).toLowerCase()} condition</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={styles.title} numberOfLines={1}>{p.name}{typeof age === 'number' ? `, ${age}` : ''}</Text>
+        </View>
+        {p.bio ? <Text style={styles.meta} numberOfLines={2}>{p.bio}</Text> : null}
         <View style={styles.sellerRow}>
-          {seller?.avatar_url ? (
-            <Image source={{ uri: seller.avatar_url }} style={styles.sellerAvatar} />
+          {p.avatar_url ? (
+            <Image source={{ uri: p.avatar_url }} style={styles.sellerAvatar} />
           ) : (
             <View style={styles.sellerAvatarPlaceholder} />
           )}
-          <TouchableOpacity style={{ flex: 1 }} onPress={() => router.push(`/profile/${item.userId}` as any)}>
-            <Text style={styles.sellerName} numberOfLines={1}>{seller?.name || 'Seller'}</Text>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => router.push(`/profile/${p.id}` as any)}>
+            <Text style={styles.sellerName} numberOfLines={1}>{p.location || 'View profile'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.wpIconBtn} onPress={handleWhatsApp} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="logo-whatsapp" size={14} color="#ffffff" />
+          <TouchableOpacity style={styles.likeBtn} onPress={() => onLike(p.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="heart" size={16} color="#ff5b80" />
           </TouchableOpacity>
         </View>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
 export default function HomeScreen() {
-  const { posts } = useStore();
   const insets = useSafeAreaInsets();
+  const [loading, setLoading] = React.useState(true);
+  const [profiles, setProfiles] = React.useState<Profile[]>([]);
+  const [myId, setMyId] = React.useState<string>('');
+  // Read-only preferences loaded from AsyncStorage; editing happens in Profile screen
+  const [genderFilter, setGenderFilter] = React.useState<'all' | 'male' | 'female' | 'non-binary' | 'other'>('all');
+  const [ageMin, setAgeMin] = React.useState<number>(18);
+  const [ageMax, setAgeMax] = React.useState<number>(99);
+
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [savedGender, savedMin, savedMax] = await Promise.all([
+          AsyncStorage.getItem('filters.gender'),
+          AsyncStorage.getItem('filters.ageMin'),
+          AsyncStorage.getItem('filters.ageMax'),
+        ]);
+        if (mounted) {
+          if (savedGender && ['all','male','female','non-binary','other'].includes(savedGender)) setGenderFilter(savedGender as any);
+          if (savedMin) setAgeMin(Math.max(18, Math.min(99, parseInt(savedMin) || 18)));
+          if (savedMax) setAgeMax(Math.max(18, Math.min(99, parseInt(savedMax) || 99)));
+        }
+
+        const [{ data: sess }, { data: list, error }] = await Promise.all([
+          supabase.auth.getSession(),
+          supabase
+            .from('profiles')
+            .select('id, name, gender, date_of_birth, bio, avatar_url, location, photos ( image_url )')
+            .order('created_at', { ascending: false })
+        ]);
+        if (!mounted) return;
+        const uid = sess.session?.user?.id || '';
+        setMyId(uid);
+        const filtered = (list as any[] | null)?.filter(p => p.id !== uid) || [];
+        setProfiles(filtered as Profile[]);
+      } catch (e) {
+        console.error('[Home] load profiles error', e);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  // Do not persist filters here; editing is moved to Profile
+
+  const handleLike = async (likedId: string) => {
+    try {
+      if (!myId) {
+        Alert.alert('Sign in required', 'Please sign in to like profiles.');
+        return;
+      }
+      const { error } = await supabase.from('likes').insert({ liker_id: myId, liked_id: likedId });
+      if (error) {
+        Alert.alert('Could not like', error.message);
+        return;
+      }
+      setProfiles(prev => prev.filter(p => p.id !== likedId));
+      // Optional: Check mutual like to hint a match (actual match row may be created by backend)
+      const { data: mutual } = await supabase
+        .from('likes')
+        .select('id')
+        .eq('liker_id', likedId)
+        .eq('liked_id', myId)
+        .maybeSingle();
+      if (mutual) {
+        Alert.alert("It's a match!", 'You both liked each other. Say hi in messages.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Something went wrong.');
+    }
+  };
+
+  const filtered = React.useMemo(() => {
+    return profiles.filter(p => {
+      // gender filter
+      if (genderFilter !== 'all' && p.gender && p.gender !== genderFilter) return false;
+      // age filter
+      const a = ageFromDob(p.date_of_birth);
+      if (typeof a === 'number') {
+        if (a < ageMin || a > ageMax) return false;
+      }
+      return true;
+    });
+  }, [profiles, genderFilter, ageMin, ageMax]);
 
   return (
     <SafeAreaView style={styles.container}>
-      {posts.length === 0 ? (
+      {/* Filters moved to Profile edit; Home remains clean */}
+
+      {loading ? (
         <View style={styles.emptyWrap}>
-          <Text style={styles.text}>No products yet. Be the first to list an item!</Text>
+          <ActivityIndicator color="#fff" />
+          <Text style={[styles.text, { marginTop: 8 }]}>Loading profiles…</Text>
+        </View>
+      ) : filtered.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <Text style={styles.text}>No profiles to show right now. Check back later!</Text>
         </View>
       ) : (
         <FlatList
-          data={posts}
+          data={filtered}
           keyExtractor={(item) => item.id}
           contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 80 }]}
-          renderItem={({ item }) => (<PostCard item={item as any} />)}
+          renderItem={({ item }) => (<ProfileCard p={item} onLike={handleLike} />)}
         />
       )}
     </SafeAreaView>
@@ -111,8 +203,6 @@ const styles = StyleSheet.create({
   imageWrap: { position: 'relative' },
   image: { width: "100%", height: 180, backgroundColor: "#222" },
   imageOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0, top: 0, backgroundColor: 'rgba(0,0,0,0.08)' },
-  priceBadge: { position: 'absolute', left: 8, bottom: 8, backgroundColor: 'rgba(10,10,10,0.85)', borderColor: 'rgba(255,255,255,0.12)', borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
-  priceBadgeText: { color: '#fff', fontWeight: '800', fontSize: 12 },
   cardBody: { padding: 12 },
   title: { color: "#fff", fontSize: 16, fontWeight: "700", marginBottom: 2 },
   meta: { color: "#aaa", fontSize: 12, marginBottom: 10 },
@@ -120,5 +210,5 @@ const styles = StyleSheet.create({
   sellerAvatar: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#222', borderWidth: 1, borderColor: '#333' },
   sellerAvatarPlaceholder: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#222', borderWidth: 1, borderColor: '#333' },
   sellerName: { color: '#ddd', fontSize: 12, fontWeight: '600' },
-  wpIconBtn: { backgroundColor: '#111', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 6, borderWidth: 1, borderColor: '#222' },
+  likeBtn: { backgroundColor: '#1a0f14', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: '#2a1a22' },
 });
