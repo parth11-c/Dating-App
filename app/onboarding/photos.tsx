@@ -17,8 +17,8 @@ export default function OnboardingPhotos() {
 
   const pickFromLibrary = async () => {
     try {
-      if (photos.length >= 6) {
-        Alert.alert('Limit', 'Please add exactly 6 photos. Remove one to add another.');
+      if (photos.length >= 4) {
+        Alert.alert('Limit', 'Please add exactly 4 photos. Remove one to add another.');
         return;
       }
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -39,8 +39,8 @@ export default function OnboardingPhotos() {
 
   const takePhoto = async () => {
     try {
-      if (photos.length >= 6) {
-        Alert.alert('Limit', 'Please add exactly 6 photos. Remove one to add another.');
+      if (photos.length >= 4) {
+        Alert.alert('Limit', 'Please add exactly 4 photos. Remove one to add another.');
         return;
       }
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -66,7 +66,7 @@ export default function OnboardingPhotos() {
     if (!draft.date_of_birth) return Alert.alert('Missing birthday', 'Please enter your date of birth.');
     if (!draft.gender || !draft.pronoun) return Alert.alert('Incomplete', 'Please select your pronoun and gender.');
     if (!draft.preferred_gender) return Alert.alert('Incomplete', 'Please select who you want to see.');
-    if (photos.length !== 6) return Alert.alert('Photos needed', 'Please add exactly 6 photos.');
+    if (photos.length !== 4) return Alert.alert('Photos needed', 'Please add exactly 4 photos.');
 
     setSaving(true);
     try {
@@ -79,9 +79,44 @@ export default function OnboardingPhotos() {
         pronoun: draft.pronoun,
         preferred_gender: draft.preferred_gender,
         date_of_birth: draft.date_of_birth,
+        religion: draft.religion ?? null,
       };
       const { error: upErr } = await supabase.from('profiles').upsert(profilePayload, { onConflict: 'id' });
       if (upErr) throw upErr;
+
+      // 1b) Sync interests to user_interests if any were chosen during onboarding
+      if (Array.isArray(draft.interests)) {
+        // Load all existing interests
+        const { data: allInterests, error: intsErr } = await supabase.from('interests').select('id, name');
+        if (intsErr) throw intsErr;
+        const mapByName = new Map<string, number>((allInterests || []).map((i: any) => [String(i.name).toLowerCase(), i.id]));
+
+        const chosen = draft.interests.map((s) => String(s).trim()).filter(Boolean);
+        const interestIds: number[] = [];
+        for (const label of chosen) {
+          const key = label.toLowerCase();
+          const existingId = mapByName.get(key);
+          if (existingId) {
+            interestIds.push(existingId);
+          } else {
+            const { data: inserted, error: insIntErr } = await supabase.from('interests').insert({ name: label }).select('id').single();
+            if (insIntErr) throw insIntErr;
+            const newId = (inserted as any)?.id;
+            if (newId) {
+              mapByName.set(key, newId);
+              interestIds.push(newId);
+            }
+          }
+        }
+
+        // Replace user's interests with the selected ones
+        await supabase.from('user_interests').delete().eq('user_id', currentUser.id);
+        if (interestIds.length) {
+          const rows = interestIds.map((id) => ({ user_id: currentUser.id, interest_id: id }));
+          const { error: uiErr } = await supabase.from('user_interests').insert(rows);
+          if (uiErr) throw uiErr;
+        }
+      }
 
       // 2) Remove any existing photo rows to avoid duplicates
       await supabase.from('photos').delete().eq('user_id', currentUser.id);
@@ -131,14 +166,14 @@ export default function OnboardingPhotos() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.body}>
-        <Text style={styles.title}>Add 6 photos</Text>
-        <Text style={styles.subtitle}>Pick or take exactly 6 photos to complete your profile.</Text>
+        <Text style={styles.title}>Add 4 photos</Text>
+        <Text style={styles.subtitle}>Pick or take exactly 4 photos to complete your profile.</Text>
         <View style={{ height: 12 }} />
         <View style={{ flexDirection: 'row', gap: 12 }}>
-          <TouchableOpacity style={[styles.btn, photos.length >= 6 && styles.btnDisabled]} onPress={pickFromLibrary} disabled={photos.length >= 6 || saving}>
+          <TouchableOpacity style={[styles.btn, photos.length >= 4 && styles.btnDisabled]} onPress={pickFromLibrary} disabled={photos.length >= 4 || saving}>
             <Text style={styles.btnText}>Pick from library</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.btn, photos.length >= 6 && styles.btnDisabled]} onPress={takePhoto} disabled={photos.length >= 6 || saving}>
+          <TouchableOpacity style={[styles.btn, photos.length >= 4 && styles.btnDisabled]} onPress={takePhoto} disabled={photos.length >= 4 || saving}>
             <Text style={styles.btnText}>Take a photo</Text>
           </TouchableOpacity>
         </View>
@@ -154,11 +189,11 @@ export default function OnboardingPhotos() {
               </View>
             ))}
           </View>
-          <Text style={styles.mutedSmall}>Photos added: {photos.length}/6</Text>
+          <Text style={styles.mutedSmall}>Photos added: {photos.length}/4</Text>
         </ScrollView>
       </View>
       <View style={styles.footer}>
-        <TouchableOpacity style={[styles.cta, (photos.length !== 6 || saving) && styles.ctaDisabled]} onPress={finish} disabled={photos.length !== 6 || saving}>
+        <TouchableOpacity style={[styles.cta, (photos.length !== 4 || saving) && styles.ctaDisabled]} onPress={finish} disabled={photos.length !== 4 || saving}>
           {saving ? <ActivityIndicator color="#000" /> : <Text style={styles.ctaText}>Finish</Text>}
         </TouchableOpacity>
       </View>

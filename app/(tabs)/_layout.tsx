@@ -39,7 +39,7 @@ export default function TabsLayout() {
       ]);
       const profile = p as any;
       const photos = (ph as any[]) || [];
-      const complete = !!(profile && profile.name && profile.gender && profile.pronoun && profile.date_of_birth && profile.preferred_gender && photos.length === 6);
+      const complete = !!(profile && profile.name && profile.gender && profile.pronoun && profile.date_of_birth && profile.preferred_gender && photos.length === 4);
       setProfileComplete(complete);
       if (!complete && !pathname?.startsWith('/onboarding')) {
         // block and redirect to the next missing step
@@ -51,10 +51,10 @@ export default function TabsLayout() {
           ? '/onboarding/dob'
           : !profile?.preferred_gender
           ? '/onboarding/preference'
-          : photos.length !== 6
+          : photos.length !== 4
           ? '/onboarding/photos'
           : '/onboarding/name';
-        Alert.alert('Complete your profile', 'Please complete onboarding first: Name → Pronoun & Gender → DOB → Preference → Details → 6 Photos.', [
+        Alert.alert('Complete your profile', 'Please complete onboarding first: Name → Pronoun & Gender → DOB → Preference → Details → 4 Photos.', [
           { text: 'OK', onPress: () => router.replace(nextPath as any) }
         ]);
         router.replace(nextPath as any);
@@ -80,7 +80,7 @@ export default function TabsLayout() {
       headerLeftContainerStyle: { paddingVertical: 0 },
       headerRightContainerStyle: { paddingVertical: 0 },
       headerTitle: () => (
-        <Text style={{ color: '#fff', fontSize: 24, fontWeight: '800', letterSpacing: -0.5 }}>ClgMart</Text>
+        <Text style={{ color: '#fff', fontSize: 24, fontWeight: '800', letterSpacing: -0.5 }}>MatchUp</Text>
       ),
       headerTintColor: "#fff",
       tabBarActiveTintColor: "#fff",
@@ -129,7 +129,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="interests"
         options={{
-          title: "Interests",
+          title: "For You",
           tabBarIcon: ({ color, size }: { color: string; size: number }) => <FontAwesome name="star" color={color} size={size} />,
         }}
         listeners={{
@@ -166,7 +166,45 @@ export default function TabsLayout() {
         name="profile"
         options={{
           title: "Profile",
+          headerTitle: () => <View />, 
           tabBarIcon: ({ color, size }: { color: string; size: number }) => <FontAwesome name="user" color={color} size={size} />,
+          headerRight: () => (
+            <Text onPress={() => router.push('/(tabs)/settings' as any)} style={{ color: '#fff', paddingHorizontal: 12 }}>
+              <FontAwesome name="cog" color="#fff" size={20} />
+            </Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          // Hide from tab bar but keep as a routable screen
+          href: null as any,
+          title: 'Settings',
+        }}
+      />
+      <Tabs.Screen
+        name="profile-view"
+        options={{
+          href: null as any,
+          title: 'Profile',
+          headerLeft: () => (
+            <Text onPress={() => router.replace('/(tabs)/profile' as any)} style={{ color: '#fff', paddingHorizontal: 12 }}>
+              <FontAwesome name="chevron-left" color="#fff" size={18} />
+            </Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile-edit"
+        options={{
+          href: null as any,
+          title: 'Edit profile',
+          headerLeft: () => (
+            <Text onPress={() => router.replace('/(tabs)/profile' as any)} style={{ color: '#fff', paddingHorizontal: 12 }}>
+              <FontAwesome name="chevron-left" color="#fff" size={18} />
+            </Text>
+          ),
         }}
       />
     </Tabs>

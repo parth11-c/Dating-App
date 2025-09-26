@@ -7,6 +7,8 @@ export type OnboardingDraft = {
   pronoun?: string;
   gender?: string;
   preferred_gender?: string;
+  religion?: string;
+  interests?: string[];
   photos: { uri: string }[]; // local URIs to upload later
 };
 

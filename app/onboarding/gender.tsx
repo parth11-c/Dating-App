@@ -34,7 +34,7 @@ export default function OnboardingGender() {
     setSaving(true);
     update({ pronoun, gender });
     setSaving(false);
-    router.push("/onboarding/preference" as any);
+    router.push("/onboarding/interests" as any);
   };
 
   return (

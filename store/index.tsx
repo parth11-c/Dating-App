@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { Platform } from 'react-native';
 import type { StoreState, User } from './types';
 import { supabase } from '@/lib/supabase';
+import { router } from 'expo-router';
 
 // Storage bucket for post images (configurable via env)
 const POSTS_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_POSTS_BUCKET || 'post-images';
@@ -50,6 +51,25 @@ export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
     loadSession();
     // No products subscription in dating app
     return () => {};
+  }, [loadSession]);
+
+  // Listen for auth state changes globally to handle invalid refresh tokens or sign-outs
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session) {
+        // Session is gone (e.g., invalid/expired refresh token). Clear local user and route to sign-in.
+        setState((prev) => ({ ...prev, currentUser: { id: '', name: '' } }));
+        try {
+          router.replace('/auth/sign-in' as any);
+        } catch {}
+      } else {
+        // Refresh local user info when session changes
+        loadSession();
+      }
+    });
+    return () => {
+      authListener?.subscription?.unsubscribe?.();
+    };
   }, [loadSession]);
 
   const signIn: StoreContextType['signIn'] = async (email, password) => {

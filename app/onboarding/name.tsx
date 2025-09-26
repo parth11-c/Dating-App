@@ -7,7 +7,7 @@ import { useOnboarding } from "@/context/onboarding";
 export default function OnboardingName() {
   const { draft, update } = useOnboarding();
   const [name, setName] = React.useState("");
-  const [bio, setBio] = React.useState("");
+  const [religion, setReligion] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
 
   const onNext = async () => {
@@ -17,7 +17,7 @@ export default function OnboardingName() {
       return;
     }
     setSaving(true);
-    update({ name: trimmed, bio: bio.trim() || undefined });
+    update({ name: trimmed, religion: religion || undefined });
     setSaving(false);
     router.push("/onboarding/dob" as any);
   };
@@ -42,17 +42,14 @@ export default function OnboardingName() {
           />
 
           <View style={{ height: 16 }} />
-          <Text style={styles.section}>About you (optional)</Text>
-          <TextInput
-            placeholder="Say something about yourself"
-            placeholderTextColor="#6b7280"
-            value={bio}
-            onChangeText={setBio}
-            style={[styles.input, styles.textArea]}
-            multiline
-            numberOfLines={4}
-            maxLength={280}
-          />
+          <Text style={styles.section}>Religion</Text>
+          <View style={styles.chipsWrap}>
+            {RELIGIONS.map((r) => (
+              <TouchableOpacity key={r.key} style={[styles.chip, religion === r.key && styles.chipActive]} onPress={() => setReligion(r.key)}>
+                <Text style={[styles.chipText, religion === r.key && styles.chipTextActive]}>{r.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </ScrollView>
         <View style={styles.footer}>
           <TouchableOpacity style={[styles.cta, !name.trim() && styles.ctaDisabled]} onPress={onNext} disabled={!name.trim() || saving}>
@@ -71,9 +68,26 @@ const styles = StyleSheet.create({
   subtitle: { color: "#9aa0a6", marginTop: 6 },
   section: { color: "#c7c7c7", fontWeight: "800", marginBottom: 8, marginTop: 6 },
   input: { backgroundColor: "#0f0f10", borderColor: "#222", borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: "#fff" },
-  textArea: { height: 120, textAlignVertical: 'top' },
+  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  chip: { backgroundColor: '#0f0f10', borderColor: '#222', borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 18 },
+  chipActive: { borderColor: '#fff', backgroundColor: '#141416' },
+  chipText: { color: '#c7c7c7', fontWeight: '700' },
+  chipTextActive: { color: '#fff' },
   footer: { padding: 16 },
   cta: { backgroundColor: "#fff", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   ctaDisabled: { opacity: 0.6 },
   ctaText: { color: "#000", fontSize: 16, fontWeight: "800" },
 });
+
+const RELIGIONS = [
+  { key: 'hindu', label: 'Hindu' },
+  { key: 'muslim', label: 'Muslim' },
+  { key: 'christian', label: 'Christianity' },
+  { key: 'sikh', label: 'Sikh' },
+  { key: 'buddhist', label: 'Buddhist' },
+  { key: 'jain', label: 'Jain' },
+  { key: 'jewish', label: 'Jewish' },
+  { key: 'spiritual', label: 'Spiritual' },
+  { key: 'agnostic', label: 'Agnostic' },
+  { key: 'atheist', label: 'Atheist' },
+];

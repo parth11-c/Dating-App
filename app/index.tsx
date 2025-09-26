@@ -22,7 +22,7 @@ export default function Index() {
           ]);
           const profile = p as any;
           const photos = (ph as any[]) || [];
-          const complete = !!(profile && profile.name && profile.gender && profile.pronoun && profile.date_of_birth && profile.preferred_gender && photos.length === 6);
+          const complete = !!(profile && profile.name && profile.gender && profile.pronoun && profile.date_of_birth && profile.preferred_gender && photos.length === 4);
           // If complete, go to tabs/home; otherwise always start onboarding at Name
           router.replace((complete ? '/(tabs)/home' : '/onboarding/name') as any);
         } else {

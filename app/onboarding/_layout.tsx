@@ -14,9 +14,10 @@ export default function OnboardingLayout() {
         <Stack.Screen name="name" options={{ title: "Your name" }} />
         <Stack.Screen name="dob" options={{ title: "Your birthday" }} />
         <Stack.Screen name="gender" options={{ title: "Pronoun & Gender" }} />
+        <Stack.Screen name="interests" options={{ title: "Your interests" }} />
         <Stack.Screen name="preference" options={{ title: "Who you want to see" }} />
         <Stack.Screen name="details" options={{ title: "Personal details" }} />
-        <Stack.Screen name="photos" options={{ title: "Add 6 photos" }} />
+        <Stack.Screen name="photos" options={{ title: "Add 4 photos" }} />
       </Stack>
     </OnboardingProvider>
   );

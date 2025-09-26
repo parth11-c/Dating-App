@@ -1,6 +1,5 @@
 import React from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator, Alert } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { useStore } from '@/store';
@@ -19,7 +18,6 @@ export default function MatchesScreen() {
   const [loading, setLoading] = React.useState(true);
   const [matches, setMatches] = React.useState<MatchRow[]>([]);
   const [incoming, setIncoming] = React.useState<{ id: number; liker_id: string; profile?: { id: string; name?: string; avatar_url?: string | null } }[]>([]);
-  const [unlocked, setUnlocked] = React.useState(false); // simple demo paywall state
 
   const load = React.useCallback(async () => {
     if (!currentUser?.id) return;
@@ -121,25 +119,6 @@ export default function MatchesScreen() {
         <Text style={[styles.muted, { paddingHorizontal: 12, marginBottom: 8 }]}>No incoming likes yet.</Text>
       ) : (
         <View>
-          {!unlocked && (
-            <View style={{ paddingHorizontal: 12, marginBottom: 12 }}>
-              <View style={{ position: 'absolute', left: 12, right: 12, top: 0, bottom: 0, zIndex: 2, alignItems: 'center', justifyContent: 'center' }}>
-                {/* Blur overlay */}
-                <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}>
-                  {/* @ts-ignore: BlurView available after expo-blur installed */}
-                  <BlurView intensity={60} tint="dark" style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}>
-                    <View style={{ flex: 1 }} />
-                  </BlurView>
-                </View>
-                <View style={{ alignItems: 'center', gap: 8 }}>
-                  <Text style={{ color: '#fff', fontWeight: '800' }}>Unlock to see who liked you</Text>
-                  <TouchableOpacity style={styles.unlockBtn} onPress={() => setUnlocked(true)}>
-                    <Text style={styles.unlockBtnText}>Unlock</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          )}
           <FlatList
             data={incoming}
             keyExtractor={(m) => String(m.id)}
@@ -171,7 +150,7 @@ export default function MatchesScreen() {
         <FlatList
           data={matches}
           keyExtractor={(m) => String(m.id)}
-          contentContainerStyle={{ padding: 12, paddingBottom: 80 }}
+          contentContainerStyle={{ padding: 12, paddingBottom: 100 }}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.row} onPress={() => router.push(`/chat/${item.id}` as any)}>
               {item.other?.avatar_url ? (
@@ -195,16 +174,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   muted: { color: '#9aa0a6' },
-  section: { color: '#fff', fontWeight: '700', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#111', borderWidth: 1, borderColor: '#222', borderRadius: 12, padding: 12, marginBottom: 10 },
-  avatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#222', borderWidth: 1, borderColor: '#333' },
+  section: { color: '#fff', fontWeight: '800', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, fontSize: 16 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#111', borderWidth: 1, borderColor: '#222', borderRadius: 14, padding: 14, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#222', borderWidth: 1, borderColor: '#333' },
   title: { color: '#fff', fontWeight: '700' },
   sub: { color: '#888', fontSize: 12 },
-  likeCard: { width: 120, backgroundColor: '#111', borderColor: '#222', borderWidth: 1, borderRadius: 12, padding: 10, alignItems: 'center' },
-  likeAvatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#222', borderWidth: 1, borderColor: '#333', marginBottom: 8 },
+  likeCard: { width: 120, backgroundColor: '#111', borderColor: '#222', borderWidth: 1, borderRadius: 14, padding: 12, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  likeAvatar: { width: 68, height: 68, borderRadius: 34, backgroundColor: '#222', borderWidth: 1, borderColor: '#333', marginBottom: 8 },
   likeName: { color: '#fff', fontWeight: '700', marginBottom: 6 },
-  likeBtn: { backgroundColor: '#1a0f14', borderWidth: 1, borderColor: '#2a1a22', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10 },
+  likeBtn: { backgroundColor: '#1a0f14', borderWidth: 1, borderColor: '#2a1a22', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12 },
   likeBtnText: { color: '#ff5b80', fontWeight: '800' },
-  unlockBtn: { backgroundColor: '#cce6ff', borderWidth: 1, borderColor: '#7cc5e6', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 14 },
-  unlockBtnText: { color: '#0a0a0a', fontWeight: '800' },
 });

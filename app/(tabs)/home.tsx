@@ -5,6 +5,7 @@ import { router } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import ProfileView from './profile-view';
 
 type Profile = {
   id: string;
@@ -28,42 +29,35 @@ function ageFromDob(dobIso?: string) {
   return age;
 }
 
-function ProfileCard({ p, onLike }: { p: Profile; onLike: (id: string) => void }) {
-  const cover = p.photos?.[0]?.image_url || p.avatar_url || undefined;
-  const age = ageFromDob(p.date_of_birth);
+function HomeProfileItem({ p, onLike, onPass }: { p: Profile; onLike: (id: string) => void; onPass: (id: string) => void }) {
   return (
-    <View style={styles.card}>
-      <TouchableOpacity onPress={() => router.push(`/profile/${p.id}` as any)}>
-        <View style={styles.imageWrap}>
-          {cover ? (
-            <Image source={{ uri: cover }} style={styles.image} />
-          ) : (
-            <View style={[styles.image, { alignItems: 'center', justifyContent: 'center' }]}>
-              <Ionicons name="person" size={48} color="#444" />
+    <View style={styles.card}> 
+      <TouchableOpacity onPress={() => router.push(`/profile/${p.id}` as any)} activeOpacity={0.9}>
+        <ProfileView
+          userId={p.id}
+          embedded
+          actions={(
+            <View style={styles.overlayActions} pointerEvents="box-none">
+              <TouchableOpacity
+                onPress={() => onPass(p.id)}
+                style={[styles.fab, styles.fabLeft]}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityLabel="Pass"
+              >
+                <Ionicons name="close" size={22} color="#111" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => onLike(p.id)}
+                style={[styles.fab, styles.fabRight]}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityLabel="Like"
+              >
+                <Ionicons name="heart" size={20} color="#ff5b80" />
+              </TouchableOpacity>
             </View>
           )}
-          <View style={styles.imageOverlay} />
-        </View>
+        />
       </TouchableOpacity>
-      <View style={styles.cardBody}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text style={styles.title} numberOfLines={1}>{p.name}{typeof age === 'number' ? `, ${age}` : ''}</Text>
-        </View>
-        {p.bio ? <Text style={styles.meta} numberOfLines={2}>{p.bio}</Text> : null}
-        <View style={styles.sellerRow}>
-          {p.avatar_url ? (
-            <Image source={{ uri: p.avatar_url }} style={styles.sellerAvatar} />
-          ) : (
-            <View style={styles.sellerAvatarPlaceholder} />
-          )}
-          <TouchableOpacity style={{ flex: 1 }} onPress={() => router.push(`/profile/${p.id}` as any)}>
-            <Text style={styles.sellerName} numberOfLines={1}>{p.location || 'View profile'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.likeBtn} onPress={() => onLike(p.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="heart" size={16} color="#ff5b80" />
-          </TouchableOpacity>
-        </View>
-      </View>
     </View>
   );
 }
@@ -136,11 +130,20 @@ export default function HomeScreen() {
         .eq('liked_id', myId)
         .maybeSingle();
       if (mutual) {
+        // Try creating a match (best-effort)
+        try {
+          await supabase.from('matches').insert({ user_a: myId, user_b: likedId });
+        } catch {}
         Alert.alert("It's a match!", 'You both liked each other. Say hi in messages.');
       }
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Something went wrong.');
     }
+  };
+
+  const handlePass = async (passedId: string) => {
+    // For now, just remove locally. If you have a `passes` table, you can insert there.
+    setProfiles(prev => prev.filter(p => p.id !== passedId));
   };
 
   const filtered = React.useMemo(() => {
@@ -174,7 +177,7 @@ export default function HomeScreen() {
           data={filtered}
           keyExtractor={(item) => item.id}
           contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 80 }]}
-          renderItem={({ item }) => (<ProfileCard p={item} onLike={handleLike} />)}
+          renderItem={({ item }) => (<HomeProfileItem p={item} onLike={handleLike} onPass={handlePass} />)}
         />
       )}
     </SafeAreaView>
@@ -200,9 +203,11 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
+  // The following styles were used by the old card body; we now rely on ProfileView's own layout.
   imageWrap: { position: 'relative' },
   image: { width: "100%", height: 180, backgroundColor: "#222" },
   imageOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0, top: 0, backgroundColor: 'rgba(0,0,0,0.08)' },
+  overlayActions: { flexDirection: 'row', justifyContent: 'space-between' },
   cardBody: { padding: 12 },
   title: { color: "#fff", fontSize: 16, fontWeight: "700", marginBottom: 2 },
   meta: { color: "#aaa", fontSize: 12, marginBottom: 10 },
@@ -211,4 +216,7 @@ const styles = StyleSheet.create({
   sellerAvatarPlaceholder: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#222', borderWidth: 1, borderColor: '#333' },
   sellerName: { color: '#ddd', fontSize: 12, fontWeight: '600' },
   likeBtn: { backgroundColor: '#1a0f14', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7, borderWidth: 1, borderColor: '#2a1a22' },
+  fab: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2, borderWidth: 1, borderColor: '#ddd' },
+  fabLeft: { alignSelf: 'flex-start' },
+  fabRight: { alignSelf: 'flex-end', backgroundColor: '#1a0f14', borderColor: '#2a1a22' },
 });

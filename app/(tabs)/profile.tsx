@@ -46,13 +46,13 @@ export default function ProfileScreen() {
   const isComplete = React.useMemo(() => {
     const hasGender = !!profile?.gender;
     const hasDob = !!profile?.date_of_birth;
-    const hasSixPhotos = photos.length === 6;
+    const hasSixPhotos = photos.length === 4;
     return hasGender && hasDob && hasSixPhotos;
   }, [profile?.gender, profile?.date_of_birth, photos.length]);
   const completionSteps: { key: string; label: string; done: boolean }[] = [
     { key: 'gender', label: 'Set your gender', done: !!profile?.gender },
     { key: 'dob', label: 'Add your date of birth', done: !!profile?.date_of_birth },
-    { key: 'photos', label: 'Upload exactly 6 photos', done: photos.length === 6 },
+    { key: 'photos', label: 'Upload exactly 4 photos', done: photos.length === 4 },
   ];
   const completionPercent = Math.round((completionSteps.filter(s => s.done).length / completionSteps.length) * 100);
 
@@ -68,8 +68,8 @@ export default function ProfileScreen() {
 
   const captureAndUploadPhoto = async () => {
     try {
-      if (photos.length >= 6) {
-        Alert.alert('Photo limit reached', 'You can upload exactly 6 photos. Delete one to add another.');
+      if (photos.length >= 4) {
+        Alert.alert('Photo limit reached', 'You can upload exactly 4 photos. Delete one to add another.');
         return;
       }
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -132,8 +132,8 @@ export default function ProfileScreen() {
 
   const pickAndUploadPhoto = async () => {
     try {
-      if (photos.length >= 6) {
-        Alert.alert('Photo limit reached', 'You can upload exactly 6 photos. Delete one to add another.');
+      if (photos.length >= 4) {
+        Alert.alert('Photo limit reached', 'You can upload exactly 4 photos. Delete one to add another.');
         return;
       }
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -258,7 +258,7 @@ export default function ProfileScreen() {
     // Basic validation
     if (!profile.gender) return Alert.alert('Missing info', 'Please select your gender.');
     if (!profile.date_of_birth) return Alert.alert('Missing info', 'Please add your date of birth.');
-    if (photos.length !== 6) return Alert.alert('Photos needed', 'Please upload exactly 6 photos to proceed.');
+    if (photos.length !== 4) return Alert.alert('Photos needed', 'Please upload exactly 4 photos to proceed.');
     setSaving(true);
     try {
       const payload: Partial<Profile> & { id: string } = {
@@ -287,8 +287,8 @@ export default function ProfileScreen() {
   const addPhoto = async () => {
     const url = newPhotoUrl.trim();
     if (!url) return;
-    if (photos.length >= 6) {
-      Alert.alert('Photo limit reached', 'You can upload exactly 6 photos. Delete one to add another.');
+    if (photos.length >= 4) {
+      Alert.alert('Photo limit reached', 'You can upload exactly 4 photos. Delete one to add another.');
       return;
     }
     try {
@@ -350,241 +350,37 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.container}>
-      {!editMode && (
-        <>
-          <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
-            {/* Header title like "Parth, 21" */}
-            <Text style={[styles.name, { paddingHorizontal: 12, marginTop: 16 }]}>
-              {(profile?.name || currentUser.name || 'User')}{age !== undefined ? `, ${age}` : ''}
-            </Text>
-
-            {/* Hero image */}
+      {/* Top profile header: small circular image, name, and View/Edit buttons */}
+      <View style={styles.topHeader}>
+        <View style={styles.picRow}>
+          <View style={styles.picWrap}>
             {hero ? (
-              <View style={styles.heroWrap}>
-                <Image source={{ uri: hero }} style={styles.heroImage} />
-                <View style={styles.heroOverlay}>
-                  <View style={styles.badge}><Text style={styles.badgeText}>New here</Text></View>
-                  <Text style={styles.heroName}>{(profile?.name || currentUser.name || 'User')}{age !== undefined ? `, ${age}` : ''}</Text>
-                </View>
-              </View>
+              <Image source={{ uri: hero }} style={styles.pic} />
             ) : (
-              <View style={[styles.heroWrap, { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#222' }]}>
-                <Ionicons name="image-outline" size={24} color="#666" />
-                <Text style={{ color: '#777', marginTop: 6 }}>Add photos to showcase your profile</Text>
+              <View style={[styles.pic, { backgroundColor: '#222', alignItems: 'center', justifyContent: 'center' }]}>
+                <Ionicons name="person" size={28} color="#666" />
               </View>
             )}
-
-            {/* About me chips */}
-            <View style={styles.cardRounded}>
-              <Text style={styles.cardTitle}>About me</Text>
-              {chips.length === 0 ? (
-                <Text style={styles.mutedSmall}>Add more details to your profile.</Text>
-              ) : (
-                <View style={styles.chipsWrap}>
-                  {chips.map((c, idx) => (
-                    <View key={`${c}-${idx}`} style={styles.chip}><Text style={styles.chipText}>{c}</Text></View>
-                  ))}
-                </View>
-              )}
-              {profile?.bio ? <Text style={[styles.muted, { marginTop: 8 }]}>{profile.bio}</Text> : null}
-            </View>
-
-            {/* Remaining photos */}
-            {photos.slice(1).map((p, i) => (
-              <View key={p.id} style={styles.photoCard}>
-                <Image source={{ uri: p.image_url }} style={styles.photoImage} />
-              </View>
-            ))}
-
-            {/* Interests */}
-            <View style={styles.cardRounded}>
-              <Text style={styles.cardTitle}>Interests</Text>
-              {interestNames.length === 0 ? (
-                <Text style={styles.mutedSmall}>Add your interests from the Interests tab.</Text>
-              ) : (
-                <View style={styles.chipsWrap}>
-                  {interestNames.map((n) => (
-                    <View key={n} style={styles.chip}><Text style={styles.chipText}>{n}</Text></View>
-                  ))}
-                </View>
-              )}
-            </View>
-          </ScrollView>
-
-          {/* Sticky bottom actions */}
-          <View style={styles.bottomBar}>
-            <TouchableOpacity style={styles.editPrimaryBtn} onPress={() => setEditMode(true)}>
-              <Text style={styles.editPrimaryText}>Edit profile</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
-              <Ionicons name="log-out-outline" size={16} color="#fff" />
-              <Text style={styles.logoutBtnText}>Logout</Text>
-            </TouchableOpacity>
           </View>
-        </>
-      )}
+          <Text style={styles.profileTitle}>{profile?.name || currentUser.name || 'User'}</Text>
+        </View>
+        <View style={styles.toggleRow}>
+          <TouchableOpacity
+            style={[styles.toggleBtn, styles.toggleBtnActive]}
+            onPress={() => router.push('/(tabs)/profile-view' as any)}
+          >
+            <Text style={[styles.toggleBtnText, styles.toggleBtnTextActive]}>View</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.toggleBtn}
+            onPress={() => router.push('/(tabs)/profile-edit' as any)}
+          >
+            <Text style={styles.toggleBtnText}>Edit</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-      {/* Editable fields */}
-      {editMode && (
-        <>
-          <View style={styles.actions}>
-            <TouchableOpacity style={styles.editBtn} onPress={async () => { await saveProfile(); setEditMode(false); }} disabled={saving}>
-              <Ionicons name="save-outline" size={16} color="#4da3ff" />
-              <Text style={styles.editBtnText}>{saving ? 'Saving…' : 'Save profile'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
-              <Ionicons name="log-out-outline" size={16} color="#fff" />
-              <Text style={styles.logoutBtnText}>Logout</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>About</Text>
-            <TextInput
-              placeholder="Your bio"
-              placeholderTextColor="#777"
-              style={styles.input}
-              multiline
-              value={profile?.bio ?? ''}
-              onChangeText={(t) => setProfile((prev) => (prev ? { ...prev, bio: t } : prev))}
-            />
-            <Text style={styles.label}>Location</Text>
-            <TextInput
-              placeholder="City"
-              placeholderTextColor="#777"
-              style={styles.input}
-              value={profile?.location ?? ''}
-              onChangeText={(t) => setProfile((prev) => (prev ? { ...prev, location: t } : prev))}
-            />
-            <Text style={styles.label}>Gender</Text>
-            <View style={styles.segmentRow}>
-              {(['male','female','non-binary','other'] as const).map(g => (
-                <TouchableOpacity key={g} style={[styles.segment, profile?.gender === g && styles.segmentActive]} onPress={() => setProfile((prev) => (prev ? { ...prev, gender: g } : prev))}>
-                  <Text style={[styles.segmentText, profile?.gender === g && styles.segmentTextActive]}>{g}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <Text style={styles.label}>Date of birth</Text>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <View style={{ flex: 1 }}>
-                <Picker selectedValue={dobDay} onValueChange={(v) => setDobDay(String(v))} style={styles.input as any}>
-                  <Picker.Item label="Day" value="" />
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
-                    <Picker.Item key={d} label={String(d)} value={String(d)} />
-                  ))}
-                </Picker>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Picker selectedValue={dobMonth} onValueChange={(v) => setDobMonth(String(v))} style={styles.input as any}>
-                  <Picker.Item label="Month" value="" />
-                  {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                    <Picker.Item key={m} label={String(m)} value={String(m)} />
-                  ))}
-                </Picker>
-              </View>
-              <View style={{ flex: 1.3 }}>
-                <Picker selectedValue={dobYear} onValueChange={(v) => setDobYear(String(v))} style={styles.input as any}>
-                  <Picker.Item label="Year" value="" />
-                  {Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - i).map(y => (
-                    <Picker.Item key={y} label={String(y)} value={String(y)} />
-                  ))}
-                </Picker>
-              </View>
-            </View>
-          </View>
-
-          {/* Discovery Preferences */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Discovery preferences</Text>
-            <Text style={styles.label}>Show me</Text>
-            <View style={styles.segmentRow}>
-              {(['all','male','female','non-binary','other'] as const).map(g => (
-                <TouchableOpacity key={g} style={[styles.segment, prefGender === g && styles.segmentActive]} onPress={() => setPrefGender(g)}>
-                  <Text style={[styles.segmentText, prefGender === g && styles.segmentTextActive]}>{g}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <Text style={[styles.label, { marginTop: 8 }]}>Age range {prefAgeMin}-{prefAgeMax}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 6 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.mutedSmall}>Min</Text>
-                <Slider
-                  minimumValue={18}
-                  maximumValue={prefAgeMax}
-                  step={1}
-                  value={prefAgeMin}
-                  onValueChange={setPrefAgeMin}
-                  minimumTrackTintColor="#cce6ff"
-                  maximumTrackTintColor="#333"
-                  thumbTintColor="#4da3ff"
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.mutedSmall}>Max</Text>
-                <Slider
-                  minimumValue={prefAgeMin}
-                  maximumValue={99}
-                  step={1}
-                  value={prefAgeMax}
-                  onValueChange={setPrefAgeMax}
-                  minimumTrackTintColor="#cce6ff"
-                  maximumTrackTintColor="#333"
-                  thumbTintColor="#4da3ff"
-                />
-              </View>
-            </View>
-          </View>
-          {/* Photos */}
-          <Text style={styles.section}>Photos (exactly 6)</Text>
-          <View style={[styles.card, { marginBottom: 10 }]}> 
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TextInput
-                placeholder="Paste image URL"
-                placeholderTextColor="#777"
-                style={[styles.input, { flex: 1 }]}
-                value={newPhotoUrl}
-                onChangeText={setNewPhotoUrl}
-              />
-              <TouchableOpacity style={[styles.addBtn, photos.length >= 6 && { opacity: 0.5 }]} onPress={addPhoto} disabled={photos.length >= 6}>
-                <Ionicons name="add" size={18} color="#0a0a0a" />
-                <Text style={styles.addBtnText}>Add</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.addBtn, photos.length >= 6 && { opacity: 0.5 }]} onPress={pickAndUploadPhoto} disabled={photos.length >= 6}>
-                <Ionicons name="image-outline" size={18} color="#0a0a0a" />
-                <Text style={styles.addBtnText}>Pick</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.addBtn, photos.length >= 6 && { opacity: 0.5 }]} onPress={captureAndUploadPhoto} disabled={photos.length >= 6}>
-                <Ionicons name="camera" size={18} color="#0a0a0a" />
-                <Text style={styles.addBtnText}>Camera</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          {photos.length < 6 ? (
-            <Text style={styles.mutedSmall}>Please add exactly 6 photos to complete your profile.</Text>
-          ) : (
-            <Text style={styles.mutedSmall}>You have added exactly 6 photos. Great job!</Text>
-          )}
-          <FlatList
-            key={'photos-grid'}
-            data={photos}
-            keyExtractor={(item) => String(item.id)}
-            numColumns={3}
-            columnWrapperStyle={styles.gridRow}
-            contentContainerStyle={[styles.gridContent, { paddingBottom: 80 }]}
-            renderItem={({ item }) => (
-              <View style={[styles.gridItem, { width: '32%', aspectRatio: 1 }]}> 
-                <Image source={{ uri: item.image_url }} style={styles.gridImage} />
-                {editMode && (
-                  <TouchableOpacity style={styles.deleteBtn} onPress={() => deletePhoto(item.id)}>
-                    <View style={styles.deleteBtnBg}>
-                      <Ionicons name="close" size={14} color="#fff" />
-                    </View>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-          />
-        </>
-      )}
+      
     </View>
   );
 }
@@ -662,7 +458,20 @@ const styles = StyleSheet.create({
   chipText: { color: '#ddd', fontWeight: '600' },
   photoCard: { marginHorizontal: 12, marginBottom: 12, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#222' },
   photoImage: { width: '100%', aspectRatio: 3/4 },
-  bottomBar: { position: 'absolute', left: 12, right: 12, bottom: 12, gap: 10 },
-  editPrimaryBtn: { backgroundColor: '#1f1f1f', borderWidth: 1, borderColor: '#333', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  editPrimaryText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  bottomBarRow: { position: 'absolute', left: 12, right: 12, bottom: 12, flexDirection: 'row', gap: 10 },
+  switchBtn: { flex: 1, backgroundColor: '#1f1f1f', borderWidth: 1, borderColor: '#333', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  switchBtnActive: { backgroundColor: '#fff', borderColor: '#fff' },
+  switchBtnText: { color: '#ddd', fontWeight: '800', fontSize: 16 },
+  switchBtnTextActive: { color: '#000' },
+  // New header + toggle styles
+  topHeader: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#1b1b1b' },
+  picRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  picWrap: { width: 54, height: 54, borderRadius: 27, overflow: 'hidden', borderWidth: 2, borderColor: '#2a2a2d' },
+  pic: { width: '100%', height: '100%', borderRadius: 27 },
+  profileTitle: { color: '#fff', fontSize: 22, fontWeight: '800' },
+  toggleRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  toggleBtn: { flex: 1, backgroundColor: '#1f1f1f', borderWidth: 1, borderColor: '#333', borderRadius: 14, paddingVertical: 10, alignItems: 'center' },
+  toggleBtnActive: { backgroundColor: '#fff', borderColor: '#fff' },
+  toggleBtnText: { color: '#ddd', fontWeight: '800', fontSize: 15 },
+  toggleBtnTextActive: { color: '#000' },
 });
