@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator, Alert, ViewToken, LayoutAnimation, Platform, UIManager } from "react-native";
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator, Alert, ViewToken, LayoutAnimation, Platform, UIManager, Dimensions, ScrollView } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { supabase } from "@/lib/supabase";
@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ProfileView from './profile-view';
 import { useStore } from '@/store';
+
+const { width: screenWidth } = Dimensions.get('window');
 
 type Profile = {
   id: string;
@@ -30,15 +32,6 @@ function ageFromDob(dobIso?: string) {
   return age;
 }
 
-function HomeProfileItem({ p, theme }: { p: Profile; theme: { card: string; } & { border: string } }) {
-  return (
-    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}> 
-      <TouchableOpacity onPress={() => router.push(`/profile/${p.id}` as any)} activeOpacity={0.9}>
-        <ProfileView userId={p.id} embedded />
-      </TouchableOpacity>
-    </View>
-  );
-}
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
@@ -46,6 +39,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = React.useState(true);
   const [profiles, setProfiles] = React.useState<Profile[]>([]);
   const [myId, setMyId] = React.useState<string>('');
+  const [myGender, setMyGender] = React.useState<Profile['gender']>(null);
   const [currentIndex, setCurrentIndex] = React.useState(0);
   const [actionLoading, setActionLoading] = React.useState<null | 'pass' | 'like'>(null);
   // Enable LayoutAnimation on Android
@@ -98,7 +92,6 @@ export default function HomeScreen() {
     }
   }).current;
   // Read-only preferences loaded from AsyncStorage; editing happens in Profile screen
-  const [genderFilter, setGenderFilter] = React.useState<'all' | 'male' | 'female' | 'non-binary' | 'other'>('all');
   const [ageMin, setAgeMin] = React.useState<number>(18);
   const [ageMax, setAgeMax] = React.useState<number>(99);
 
@@ -106,13 +99,11 @@ export default function HomeScreen() {
     let mounted = true;
     (async () => {
       try {
-        const [savedGender, savedMin, savedMax] = await Promise.all([
-          AsyncStorage.getItem('filters.gender'),
+        const [savedMin, savedMax] = await Promise.all([
           AsyncStorage.getItem('filters.ageMin'),
           AsyncStorage.getItem('filters.ageMax'),
         ]);
         if (mounted) {
-          if (savedGender && ['all','male','female','non-binary','other'].includes(savedGender)) setGenderFilter(savedGender as any);
           if (savedMin) setAgeMin(Math.max(18, Math.min(99, parseInt(savedMin) || 18)));
           if (savedMax) setAgeMax(Math.max(18, Math.min(99, parseInt(savedMax) || 99)));
         }
@@ -127,6 +118,17 @@ export default function HomeScreen() {
         if (!mounted) return;
         const uid = sess.session?.user?.id || '';
         setMyId(uid);
+        // fetch my gender
+        if (uid) {
+          try {
+            const { data: me } = await supabase
+              .from('profiles')
+              .select('gender')
+              .eq('id', uid)
+              .maybeSingle();
+            if (mounted) setMyGender(me?.gender ?? null);
+          } catch {}
+        }
         const filtered = (list as any[] | null)?.filter(p => p.id !== uid) || [];
         setProfiles(shuffleArray(filtered as Profile[]));
       } catch (e) {
@@ -208,11 +210,12 @@ export default function HomeScreen() {
 
   const filtered = React.useMemo(() => {
     return profiles.filter(p => {
-      // gender filter
-      // If a preferred gender is set, require an exact match and exclude unknown/null genders
-      if (genderFilter !== 'all') {
-        if (p.gender !== genderFilter) return false;
-      }
+      // gender filter: only show opposite gender of current user
+      if (myGender === 'male') {
+        if (p.gender !== 'female') return false;
+      } else if (myGender === 'female') {
+        if (p.gender !== 'male') return false;
+      } // for non-binary/other/unknown, don't restrict by gender
       // age filter
       const a = ageFromDob(p.date_of_birth);
       if (typeof a === 'number') {
@@ -220,7 +223,7 @@ export default function HomeScreen() {
       }
       return true;
     });
-  }, [profiles, genderFilter, ageMin, ageMax]);
+  }, [profiles, myGender, ageMin, ageMax]);
 
   // Shuffle helper
   function shuffleArray<T>(arr: T[]): T[] {
@@ -245,6 +248,17 @@ export default function HomeScreen() {
       ]);
       const uid = sess.session?.user?.id || '';
       setMyId(uid);
+      // refresh my gender
+      if (uid) {
+        try {
+          const { data: me } = await supabase
+            .from('profiles')
+            .select('gender')
+            .eq('id', uid)
+            .maybeSingle();
+          setMyGender(me?.gender ?? null);
+        } catch {}
+      }
       const filteredList = (list as any[] | null)?.filter(p => p.id !== uid) || [];
       setProfiles(shuffleArray(filteredList as Profile[]));
       setCurrentIndex(0);
@@ -276,8 +290,21 @@ export default function HomeScreen() {
           <FlatList
             data={filtered}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 140 }]}
-            renderItem={({ item }) => (<HomeProfileItem p={item} theme={theme} />)}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            decelerationRate="fast"
+            style={{ flex: 1 }}
+            renderItem={({ item }) => (
+              <View style={styles.fullScreenCard}>
+                <ScrollView 
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingVertical: 8 }}
+                >
+                  <ProfileView userId={item.id} embedded />
+                </ScrollView>
+              </View>
+            )}
             onViewableItemsChanged={onViewableItemsChanged}
             viewabilityConfig={viewabilityConfig}
           />
@@ -332,19 +359,9 @@ const styles = StyleSheet.create({
   text: { color: "#fff", textAlign: "center" },
   emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   list: { padding: 12 },
-  card: { 
-    backgroundColor: "#111", 
-    borderRadius: 12, 
-    overflow: "hidden", 
-    marginBottom: 12, 
-    borderColor: "#222", 
-    borderWidth: 1,
-    // subtle shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 2,
+  fullScreenCard: { 
+    width: screenWidth, 
+    flex: 1,
   },
   // The following styles were used by the old card body; we now rely on ProfileView's own layout.
   imageWrap: { position: 'relative' },
