@@ -29,6 +29,7 @@ export default function ChatByMatchScreen() {
   const [peerOnline, setPeerOnline] = React.useState(false);
   const [peerTyping, setPeerTyping] = React.useState(false);
   const typingTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const messageIdsRef = React.useRef<Set<string>>(new Set());
 
   const myId = currentUser.id;
   const ready = !!myId && Number.isFinite(matchId);
@@ -72,30 +73,41 @@ export default function ChatByMatchScreen() {
   }, [matchId, myId, ready]);
 
   const loadMessages = React.useCallback(async () => {
-    if (!ready || !peer?.id) return;
+    if (!ready) return;
     setLoading(true);
     const { data, error } = await supabase
       .from('messages')
       .select('id, match_id, sender_id, body, created_at')
       .eq('match_id', matchId)
       .order('created_at', { ascending: true });
-    if (!error && data) setMessages(data as ChatMessage[]);
+    if (!error && data) {
+      setMessages(data as ChatMessage[]);
+      messageIdsRef.current = new Set((data as any[]).map((m: any) => m.id));
+    }
     setLoading(false);
-  }, [ready, peer?.id, myId]);
+  }, [ready, matchId]);
 
   React.useEffect(() => { loadMessages(); }, [loadMessages]);
 
   React.useEffect(() => {
-    if (!ready || !peer?.id) return;
+    if (!ready) return;
     const channel = supabase
       .channel(`messages-match-${matchId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `match_id=eq.${matchId}` }, (payload: any) => {
         const msg = payload.new as ChatMessage;
-        setMessages(prev => [...prev, msg]);
+        if (!messageIdsRef.current.has(msg.id)) {
+          messageIdsRef.current.add(msg.id);
+          setMessages(prev => [...prev, msg]);
+        }
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `match_id=eq.${matchId}` }, (payload: any) => {
+        const msg = payload.new as ChatMessage;
+        messageIdsRef.current.add(msg.id);
+        setMessages(prev => prev.map(m => (m.id === msg.id ? msg : m)));
       })
       .subscribe();
     return () => { channel.unsubscribe(); };
-  }, [ready, peer?.id, myId]);
+  }, [ready, matchId]);
 
   // Presence and typing indicators (broadcast + presence)
   React.useEffect(() => {
@@ -149,11 +161,21 @@ export default function ChatByMatchScreen() {
 
   const sendMessage = async () => {
     const body = input.trim();
-    if (!body || !ready || !peer?.id) return;
+    if (!body || !ready) return;
     setSending(true);
     try {
-      const { error } = await supabase.from('messages').insert({ match_id: matchId, sender_id: myId, body });
-      if (!error) setInput('');
+      const { data: inserted, error } = await supabase
+        .from('messages')
+        .insert({ match_id: matchId, sender_id: myId, body })
+        .select('id, match_id, sender_id, body, created_at')
+        .single();
+      if (!error && inserted) {
+        if (!messageIdsRef.current.has((inserted as any).id)) {
+          messageIdsRef.current.add((inserted as any).id);
+          setMessages(prev => [...prev, inserted as any]);
+        }
+        setInput('');
+      }
     } finally {
       setSending(false);
     }
@@ -161,12 +183,12 @@ export default function ChatByMatchScreen() {
 
   // Mark messages as read when viewing the chat
   const markRead = React.useCallback(async () => {
-    if (!ready || !peer?.id) return;
+    if (!ready) return;
     const now = new Date().toISOString();
     await supabase
       .from('message_reads')
       .upsert({ match_id: matchId, user_id: myId, last_read_at: now }, { onConflict: 'match_id,user_id' });
-  }, [ready, peer?.id, myId]);
+  }, [ready, matchId, myId]);
 
   React.useEffect(() => { markRead(); }, [markRead, messages.length]);
 
