@@ -209,7 +209,10 @@ export default function HomeScreen() {
   const filtered = React.useMemo(() => {
     return profiles.filter(p => {
       // gender filter
-      if (genderFilter !== 'all' && p.gender && p.gender !== genderFilter) return false;
+      // If a preferred gender is set, require an exact match and exclude unknown/null genders
+      if (genderFilter !== 'all') {
+        if (p.gender !== genderFilter) return false;
+      }
       // age filter
       const a = ageFromDob(p.date_of_birth);
       if (typeof a === 'number') {

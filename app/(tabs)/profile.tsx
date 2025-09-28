@@ -320,13 +320,36 @@ export default function ProfileScreen() {
     }
   };
 
+  // Derive storage object path from a public URL
+  const storagePathFromPublicUrl = (publicUrl: string, bucket: string): string | null => {
+    // Expected format: https://<project>.supabase.co/storage/v1/object/public/<bucket>/<path>
+    const marker = `/storage/v1/object/public/${bucket}/`;
+    const idx = publicUrl.indexOf(marker);
+    if (idx === -1) return null;
+    return publicUrl.substring(idx + marker.length);
+  };
+
   const deletePhoto = async (photoId: number) => {
     Alert.alert('Delete photo', 'Remove this photo from your profile?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
-        const { error } = await supabase.from('photos').delete().eq('id', photoId);
-        if (error) Alert.alert('Error', error.message);
-        else await load();
+        try {
+          // Find the photo URL from current state
+          const photo = photos.find(p => p.id === photoId);
+          const imageUrl = photo?.image_url;
+          const storagePath = imageUrl ? storagePathFromPublicUrl(imageUrl, PHOTOS_BUCKET) : null;
+          if (storagePath) {
+            const { error: rmErr } = await supabase.storage.from(PHOTOS_BUCKET).remove([storagePath]);
+            if (rmErr && !String(rmErr.message || rmErr).toLowerCase().includes('not found')) {
+              console.warn('Storage remove failed:', rmErr);
+            }
+          }
+          const { error } = await supabase.from('photos').delete().eq('id', photoId);
+          if (error) Alert.alert('Error', error.message);
+          else await load();
+        } catch (e: any) {
+          Alert.alert('Error', e?.message || 'Failed to delete photo');
+        }
       }}
     ]);
   };

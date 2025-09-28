@@ -9,8 +9,8 @@ import { StatusBar } from 'expo-status-bar';
 
 interface ChatMessage {
   id: string;
+  match_id: number;
   sender_id: string;
-  recipient_id: string;
   body: string;
   created_at: string;
 }
@@ -74,11 +74,10 @@ export default function ChatByMatchScreen() {
   const loadMessages = React.useCallback(async () => {
     if (!ready || !peer?.id) return;
     setLoading(true);
-    const otherId = peer.id;
     const { data, error } = await supabase
       .from('messages')
-      .select('id, sender_id, recipient_id, body, created_at')
-      .or(`and(sender_id.eq.${myId},recipient_id.eq.${otherId}),and(sender_id.eq.${otherId},recipient_id.eq.${myId})`)
+      .select('id, match_id, sender_id, body, created_at')
+      .eq('match_id', matchId)
       .order('created_at', { ascending: true });
     if (!error && data) setMessages(data as ChatMessage[]);
     setLoading(false);
@@ -88,12 +87,11 @@ export default function ChatByMatchScreen() {
 
   React.useEffect(() => {
     if (!ready || !peer?.id) return;
-    const otherId = peer.id;
-    const channel = supabase.channel(`messages-${myId}-${otherId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => {
+    const channel = supabase
+      .channel(`messages-match-${matchId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `match_id=eq.${matchId}` }, (payload: any) => {
         const msg = payload.new as ChatMessage;
-        const match = (msg.sender_id === myId && msg.recipient_id === otherId) || (msg.sender_id === otherId && msg.recipient_id === myId);
-        if (match) setMessages(prev => [...prev, msg]);
+        setMessages(prev => [...prev, msg]);
       })
       .subscribe();
     return () => { channel.unsubscribe(); };
@@ -152,10 +150,9 @@ export default function ChatByMatchScreen() {
   const sendMessage = async () => {
     const body = input.trim();
     if (!body || !ready || !peer?.id) return;
-    const otherId = peer.id;
     setSending(true);
     try {
-      const { error } = await supabase.from('messages').insert({ sender_id: myId, recipient_id: otherId, body });
+      const { error } = await supabase.from('messages').insert({ match_id: matchId, sender_id: myId, body });
       if (!error) setInput('');
     } finally {
       setSending(false);
@@ -168,7 +165,7 @@ export default function ChatByMatchScreen() {
     const now = new Date().toISOString();
     await supabase
       .from('message_reads')
-      .upsert({ user_id: myId, peer_id: peer.id, last_read_at: now }, { onConflict: 'user_id,peer_id' });
+      .upsert({ match_id: matchId, user_id: myId, last_read_at: now }, { onConflict: 'match_id,user_id' });
   }, [ready, peer?.id, myId]);
 
   React.useEffect(() => { markRead(); }, [markRead, messages.length]);
@@ -195,7 +192,7 @@ export default function ChatByMatchScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top','left','right','bottom']}>
       <StatusBar style={resolvedThemeMode === 'light' ? 'dark' : 'light'} />
       <View style={[styles.header, { borderBottomColor: theme.headerBorder }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
@@ -209,7 +206,7 @@ export default function ChatByMatchScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {loading ? (
           <View style={[styles.center, { padding: 16 }]}> 
             <ActivityIndicator color={resolvedThemeMode === 'light' ? theme.accent : '#fff'} />
@@ -248,7 +245,7 @@ export default function ChatByMatchScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: 'transparent' },
   center: { alignItems: 'center', justifyContent: 'center' },
   header: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingTop: 4, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#191919' },
   headerPeer: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },

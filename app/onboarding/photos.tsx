@@ -118,7 +118,32 @@ export default function OnboardingPhotos() {
         }
       }
 
-      // 2) Remove any existing photo rows to avoid duplicates
+      // 2) Remove any existing photos (both storage objects and DB rows) to avoid duplicates
+      const { data: existingPhotos } = await supabase
+        .from('photos')
+        .select('id, image_url')
+        .eq('user_id', currentUser.id);
+
+      const storagePathFromPublicUrl = (publicUrl: string, bucket: string): string | null => {
+        const marker = `/storage/v1/object/public/${bucket}/`;
+        const idx = publicUrl.indexOf(marker);
+        if (idx === -1) return null;
+        return publicUrl.substring(idx + marker.length);
+      };
+
+      if (Array.isArray(existingPhotos) && existingPhotos.length) {
+        const toRemove: string[] = [];
+        for (const ph of existingPhotos as any[]) {
+          const p = storagePathFromPublicUrl(ph.image_url, PHOTOS_BUCKET);
+          if (p) toRemove.push(p);
+        }
+        if (toRemove.length) {
+          const { error: rmErr } = await supabase.storage.from(PHOTOS_BUCKET).remove(toRemove);
+          if (rmErr && !String((rmErr as any).message || rmErr).toLowerCase().includes('not found')) {
+            console.warn('Failed to remove some storage objects during onboarding reset:', rmErr);
+          }
+        }
+      }
       await supabase.from('photos').delete().eq('user_id', currentUser.id);
 
       // 3) Upload each photo and insert row

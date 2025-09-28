@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { useStore } from '@/store';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
 interface MatchRow {
   id: number;
@@ -13,11 +14,21 @@ interface MatchRow {
   other?: { id: string; name?: string; avatar_url?: string | null };
 }
 
+interface LikeRequestRow {
+  id: number;
+  liker_id: string;
+  liked_id: string;
+  created_at: string;
+  other?: { id: string; name?: string; avatar_url?: string | null };
+}
+
 export default function MatchesScreen() {
   const { currentUser, themeMode } = useStore();
   const [loading, setLoading] = React.useState(true);
   const [matches, setMatches] = React.useState<MatchRow[]>([]);
-  const [incoming, setIncoming] = React.useState<{ id: number; liker_id: string; profile?: { id: string; name?: string; avatar_url?: string | null } }[]>([]);
+  const [requests, setRequests] = React.useState<LikeRequestRow[]>([]);
+  const [actioningId, setActioningId] = React.useState<number | null>(null);
+  const [actionType, setActionType] = React.useState<null | 'accept' | 'reject'>(null);
 
   const theme = useMemo(() => {
     if (themeMode === 'light') {
@@ -55,59 +66,41 @@ export default function MatchesScreen() {
         .select('id, user1_id, user2_id, created_at')
         .or(`user1_id.eq.${currentUser.id},user2_id.eq.${currentUser.id}`)
         .order('created_at', { ascending: false });
+      // incoming like requests
+      const { data: likeRows } = await supabase
+        .from('likes')
+        .select('id, liker_id, liked_id, created_at')
+        .eq('liked_id', currentUser.id)
+        .order('created_at', { ascending: false });
+
+      // load other users' profiles for both lists in one query
+      const matchOthers = (data || []).map(m => (m.user1_id === currentUser.id ? m.user2_id : m.user1_id));
+      const requestOthers = (likeRows || []).map(l => l.liker_id);
+      const others = Array.from(new Set([...
+        matchOthers,
+        ...requestOthers,
+      ]));
+      let profiles: Record<string, { id: string; name?: string; avatar_url?: string | null }> = {};
+      if (others.length) {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, name, avatar_url')
+          .in('id', others);
+        for (const p of profs || []) profiles[p.id] = p as any;
+      }
+
       if (!error && data) {
-        // load other users' profiles
-        const others = Array.from(new Set(data.map(m => (m.user1_id === currentUser.id ? m.user2_id : m.user1_id))));
-        let profiles: Record<string, { id: string; name?: string; avatar_url?: string | null }> = {};
-        if (others.length) {
-          const { data: profs } = await supabase
-            .from('profiles')
-            .select('id, name, avatar_url')
-            .in('id', others);
-          for (const p of profs || []) profiles[p.id] = p as any;
-        }
         const enriched = (data as any[]).map(m => ({
           ...m,
           other: profiles[m.user1_id === currentUser.id ? m.user2_id : m.user1_id]
         })) as MatchRow[];
         setMatches(enriched);
       }
-
-      // Load incoming likes (who liked me that I haven't liked back yet and not matched)
-      const { data: incomingLikes } = await supabase
-        .from('likes')
-        .select('id, liker_id, liked_id')
-        .eq('liked_id', currentUser.id);
-      const myLikes = new Set<string>();
-      {
-        const { data: mine } = await supabase
-          .from('likes')
-          .select('liked_id')
-          .eq('liker_id', currentUser.id);
-        for (const r of mine || []) myLikes.add((r as any).liked_id);
-      }
-      const matchedPairs = new Set<string>(data?.map(m => {
-        const a = m.user1_id < m.user2_id ? `${m.user1_id}-${m.user2_id}` : `${m.user2_id}-${m.user1_id}`;
-        return a;
-      }) || []);
-      const inc = [] as { id: number; liker_id: string; profile?: { id: string; name?: string; avatar_url?: string | null } }[];
-      const neededIds: string[] = [];
-      for (const r of incomingLikes || []) {
-        const liker = (r as any).liker_id as string;
-        if (myLikes.has(liker)) continue; // I already liked back
-        const pairKey = liker < currentUser.id ? `${liker}-${currentUser.id}` : `${currentUser.id}-${liker}`;
-        if (matchedPairs.has(pairKey)) continue; // already matched
-        inc.push({ id: (r as any).id, liker_id: liker });
-        neededIds.push(liker);
-      }
-      if (neededIds.length) {
-        const { data: profs } = await supabase.from('profiles').select('id, name, avatar_url').in('id', neededIds);
-        const map: Record<string, any> = {};
-        for (const p of profs || []) map[(p as any).id] = p;
-        setIncoming(inc.map(i => ({ ...i, profile: map[i.liker_id] })));
-      } else {
-        setIncoming([]);
-      }
+      const enrichedReqs = (likeRows as any[] | null)?.map(l => ({
+        ...l,
+        other: profiles[l.liker_id],
+      })) as LikeRequestRow[] | undefined;
+      setRequests(enrichedReqs || []);
     } finally {
       setLoading(false);
     }
@@ -115,16 +108,47 @@ export default function MatchesScreen() {
 
   React.useEffect(() => { load(); }, [load]);
 
-  const likeBack = async (otherId: string) => {
+  const acceptRequest = async (like: LikeRequestRow) => {
+    if (!currentUser?.id) return;
+    setActioningId(like.id);
+    setActionType('accept');
     try {
-      const { error } = await supabase.from('likes').insert({ liker_id: currentUser.id, liked_id: otherId });
-      if (error) {
-        Alert.alert('Error', error.message);
-        return;
+      const a = currentUser.id < like.liker_id ? currentUser.id : like.liker_id;
+      const b = currentUser.id < like.liker_id ? like.liker_id : currentUser.id;
+      const { data: existing } = await supabase
+        .from('matches')
+        .select('id')
+        .or(`and(user1_id.eq.${a},user2_id.eq.${b}),and(user1_id.eq.${b},user2_id.eq.${a})`)
+        .maybeSingle();
+      if (!existing) {
+        const { error: insErr } = await supabase.from('matches').insert({ user1_id: a, user2_id: b });
+        if (insErr) throw insErr;
       }
+      // remove the like request
+      await supabase.from('likes').delete().eq('id', like.id);
+      // refresh lists locally
+      setRequests(prev => prev.filter(r => r.id !== like.id));
       await load();
-      Alert.alert('Liked back', 'If they liked you, it’s a match!');
     } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to accept request.');
+    } finally {
+      setActioningId(null);
+      setActionType(null);
+    }
+  };
+
+  const rejectRequest = async (like: LikeRequestRow) => {
+    if (!currentUser?.id) return;
+    setActioningId(like.id);
+    setActionType('reject');
+    try {
+      await supabase.from('likes').delete().eq('id', like.id);
+      setRequests(prev => prev.filter(r => r.id !== like.id));
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to reject request.');
+    } finally {
+      setActioningId(null);
+      setActionType(null);
     }
   };
 
@@ -139,59 +163,74 @@ export default function MatchesScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['left','right','bottom']}>
-      {/* Incoming likes preview */}
-      <Text style={[styles.section, { color: theme.text }]}>Who liked you</Text>
-      {incoming.length === 0 ? (
-        <Text style={[styles.muted, { color: theme.muted, paddingHorizontal: 12, marginBottom: 8 }]}>No incoming likes yet.</Text>
-      ) : (
-        <View>
-          <FlatList
-            data={incoming}
-            keyExtractor={(m) => String(m.id)}
-            horizontal
-            style={{ paddingHorizontal: 12, marginBottom: 12 }}
-            contentContainerStyle={{ gap: 10 }}
-            renderItem={({ item }) => (
-              <View style={[styles.likeCard, { backgroundColor: theme.card, borderColor: theme.border }] }>
-                {item.profile?.avatar_url ? (
-                  <Image source={{ uri: item.profile.avatar_url }} style={styles.likeAvatar} />
-                ) : (
-                  <View style={[styles.likeAvatar, { backgroundColor: theme.avatarBg, borderColor: theme.border }]} />
-                )}
-                <Text style={[styles.likeName, { color: theme.text }]} numberOfLines={1}>{item.profile?.name || 'Someone'}</Text>
-                <TouchableOpacity style={[styles.likeBtn, { backgroundColor: theme.accentSubtle, borderColor: themeMode === 'light' ? theme.border : '#2a1a22' }]} onPress={() => likeBack(item.liker_id)}>
-                  <Text style={[styles.likeBtnText, { color: theme.accent }]}>Like back</Text>
-                </TouchableOpacity>
+      <FlatList
+        data={matches}
+        keyExtractor={(m) => String(m.id)}
+        contentContainerStyle={{ padding: 12, paddingBottom: 100 }}
+        ListHeaderComponent={
+          <>
+            <Text style={[styles.section, { color: theme.text }]}>Requests</Text>
+            {requests.length === 0 ? (
+              <View style={[styles.center, { paddingVertical: 6 }]}>
+                <Text style={[styles.muted, { color: theme.muted }]}>No new requests</Text>
               </View>
+            ) : (
+              requests.map((r) => (
+                <View key={r.id} style={[styles.row, { backgroundColor: theme.card, borderColor: theme.border }]}> 
+                  {r.other?.avatar_url ? (
+                    <Image source={{ uri: r.other.avatar_url }} style={styles.avatar} />
+                  ) : (
+                    <View style={[styles.avatar, { backgroundColor: theme.avatarBg, borderColor: theme.border }]} />
+                  )}
+                  <TouchableOpacity style={{ flex: 1 }} onPress={() => router.push(`/profile/${r.other?.id}` as any)}>
+                    <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>{r.other?.name || 'Someone'}</Text>
+                    <Text style={[styles.sub, { color: theme.sub }]} numberOfLines={1}>Requested on {new Date(r.created_at).toLocaleDateString()}</Text>
+                  </TouchableOpacity>
+                  <View style={styles.actions}>
+                    {!(actioningId === r.id && actionType === 'accept') && (
+                      <TouchableOpacity style={[styles.smallBtn, { borderColor: theme.border }]} onPress={() => rejectRequest(r)} disabled={actioningId === r.id} accessibilityLabel="Reject">
+                        {actioningId === r.id && actionType === 'reject' ? (
+                          <ActivityIndicator size="small" />
+                        ) : (
+                          <Ionicons name="close" size={16} color={theme.muted} />
+                        )}
+                      </TouchableOpacity>
+                    )}
+                    {!(actioningId === r.id && actionType === 'reject') && (
+                      <TouchableOpacity style={[styles.smallBtn, { borderColor: theme.border }]} onPress={() => acceptRequest(r)} disabled={actioningId === r.id} accessibilityLabel="Accept">
+                        {actioningId === r.id && actionType === 'accept' ? (
+                          <ActivityIndicator size="small" />
+                        ) : (
+                          <Ionicons name="checkmark" size={16} color={theme.accent} />
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              ))
             )}
-          />
-        </View>
-      )}
-
-      {matches.length === 0 ? (
-        <View style={styles.center}> 
-          <Text style={[styles.muted, { color: theme.muted }]}>No matches yet. Keep exploring!</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={matches}
-          keyExtractor={(m) => String(m.id)}
-          contentContainerStyle={{ padding: 12, paddingBottom: 100 }}
-          renderItem={({ item }) => (
-            <View style={[styles.row, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              {item.other?.avatar_url ? (
-                <Image source={{ uri: item.other.avatar_url }} style={styles.avatar} />
-              ) : (
-                <View style={[styles.avatar, { backgroundColor: theme.avatarBg, borderColor: theme.border }]} />
-              )}
-              <TouchableOpacity style={{ flex: 1 }} onPress={() => router.push(`/profile/${item.other?.id}` as any)}>
-                <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>{item.other?.name || 'Match'}</Text>
-                <Text style={[styles.sub, { color: theme.sub }]} numberOfLines={1}>Matched on {new Date(item.created_at).toLocaleDateString()}</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        />
-      )}
+            <Text style={[styles.section, { color: theme.text, marginTop: 8 }]}>Matches</Text>
+            {matches.length === 0 ? (
+              <View style={[styles.center, { paddingVertical: 6 }]}> 
+                <Text style={[styles.muted, { color: theme.muted }]}>No matches yet. Keep exploring!</Text>
+              </View>
+            ) : null}
+          </>
+        }
+        renderItem={({ item }) => (
+          <View style={[styles.row, { backgroundColor: theme.card, borderColor: theme.border }]}> 
+            {item.other?.avatar_url ? (
+              <Image source={{ uri: item.other.avatar_url }} style={styles.avatar} />
+            ) : (
+              <View style={[styles.avatar, { backgroundColor: theme.avatarBg, borderColor: theme.border }]} />
+            )}
+            <TouchableOpacity style={{ flex: 1 }} onPress={() => router.push(`/profile/${item.other?.id}` as any)}>
+              <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>{item.other?.name || 'Match'}</Text>
+              <Text style={[styles.sub, { color: theme.sub }]} numberOfLines={1}>Matched on {new Date(item.created_at).toLocaleDateString()}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      />
     </SafeAreaView>
   );
 }
@@ -205,6 +244,8 @@ const styles = StyleSheet.create({
   avatar: { width: 48, height: 48, borderRadius: 24, borderWidth: 1 },
   title: { fontWeight: '700' },
   sub: { fontSize: 12 },
+  actions: { flexDirection: 'row', gap: 8 },
+  smallBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   likeCard: { width: 120, borderWidth: 1, borderRadius: 14, padding: 12, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   likeAvatar: { width: 68, height: 68, borderRadius: 34, borderWidth: 1, marginBottom: 8 },
   likeName: { fontWeight: '700', marginBottom: 6 },

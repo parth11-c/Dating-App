@@ -138,14 +138,44 @@ export default function ProfileEditScreen() {
     } catch (e: any) { Alert.alert('Upload failed', e?.message || 'Please try again.'); }
   };
 
+  // Derive storage object path from a public URL
+  const storagePathFromPublicUrl = (publicUrl: string, bucket: string): string | null => {
+    // Expected format: https://<project>.supabase.co/storage/v1/object/public/<bucket>/<path>
+    const marker = `/storage/v1/object/public/${bucket}/`;
+    const idx = publicUrl.indexOf(marker);
+    if (idx === -1) return null;
+    return publicUrl.substring(idx + marker.length);
+  };
+
   const deletePhoto = async (photoId: number) => {
     Alert.alert('Delete photo', 'Remove this photo?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         setBusyPhotoIds(prev => new Set(prev).add(photoId));
-        const { error } = await supabase.from('photos').delete().eq('id', photoId);
-        if (error) Alert.alert('Error', error.message); else await load();
-        setBusyPhotoIds(prev => { const n = new Set(prev); n.delete(photoId); return n; });
+        try {
+          // Find photo URL locally to compute storage path
+          const photo = photos.find(p => p.id === photoId);
+          const imageUrl = photo?.image_url;
+          const storagePath = imageUrl ? storagePathFromPublicUrl(imageUrl, PHOTOS_BUCKET) : null;
+          if (storagePath) {
+            // Best-effort storage deletion first
+            const { error: rmErr } = await supabase.storage.from(PHOTOS_BUCKET).remove([storagePath]);
+            // If file already missing, ignore
+            if (rmErr && !String(rmErr.message || rmErr).toLowerCase().includes('not found')) {
+              // Still proceed to remove DB row, but inform user
+              console.warn('Storage remove failed:', rmErr);
+            }
+          }
+          // Remove DB row
+          const { error } = await supabase.from('photos').delete().eq('id', photoId);
+          if (error) {
+            Alert.alert('Error', error.message);
+          } else {
+            await load();
+          }
+        } finally {
+          setBusyPhotoIds(prev => { const n = new Set(prev); n.delete(photoId); return n; });
+        }
       }}
     ]);
   };

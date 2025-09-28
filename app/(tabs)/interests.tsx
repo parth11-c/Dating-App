@@ -155,44 +155,11 @@ export default function InterestsScreen() {
     try {
       if (!currentUser?.id || likingId) return;
       setLikingId(otherId);
-       const { data: existing } = await supabase
-        .from('likes')
-        .select('id')
-        .eq('liker_id', currentUser.id)
-        .eq('liked_id', otherId)
-        .maybeSingle();
-      if (existing) {
-        router.push('/(tabs)/matches' as any);
-        return;
-      }
-      // Insert like
+      // Insert like (request-only UX); do not auto-create match
       const { error } = await supabase.from('likes').insert({ liker_id: currentUser.id, liked_id: otherId });
       if (error) return;
       // Mark locally as liked
       setLikedIds(prev => new Set(prev).add(otherId));
-      // Check mutual
-      const { data: mutual } = await supabase
-        .from('likes')
-        .select('id')
-        .eq('liker_id', otherId)
-        .eq('liked_id', currentUser.id)
-        .maybeSingle();
-      if (mutual) {
-        // Ensure a match row exists (order-invariant pair)
-        try {
-          const a = currentUser.id < otherId ? currentUser.id : otherId;
-          const b = currentUser.id < otherId ? otherId : currentUser.id;
-          const { data: existingMatch } = await supabase
-            .from('matches')
-            .select('id')
-            .or(`and(user1_id.eq.${a},user2_id.eq.${b}),and(user1_id.eq.${b},user2_id.eq.${a})`)
-            .maybeSingle();
-          if (!existingMatch) {
-            await supabase.from('matches').insert({ user1_id: a, user2_id: b });
-          }
-        } catch {}
-        router.push('/(tabs)/matches' as any);
-      }
     } finally {
       setLikingId(null);
     }

@@ -59,10 +59,12 @@ export default function ProfileViewScreen({ userId, embedded, actions, onLike, l
   const [profile, setProfile] = React.useState<Profile | null>(null);
   const [photos, setPhotos] = React.useState<Photo[]>([]);
   const [interestNames, setInterestNames] = React.useState<string[]>([]);
+  const [loading, setLoading] = React.useState(true);
 
   const load = React.useCallback(async () => {
     const targetId = userId || currentUser?.id;
     if (!targetId) return;
+    setLoading(true);
     const [{ data: p }, { data: ph }, { data: ui }] = await Promise.all([
       supabase.from('profiles').select('id, name, bio, gender, date_of_birth, location, religion').eq('id', targetId).maybeSingle(),
       supabase.from('photos').select('id, image_url').eq('user_id', targetId).order('created_at', { ascending: false }),
@@ -72,6 +74,7 @@ export default function ProfileViewScreen({ userId, embedded, actions, onLike, l
     setPhotos((ph as any[]) || []);
     const names = ((ui as any[]) || []).map((r: any) => r?.interests?.name).filter((n: any) => typeof n === 'string');
     setInterestNames(names);
+    setLoading(false);
   }, [currentUser?.id, userId]);
 
   React.useEffect(() => { load(); }, [load]);
@@ -100,21 +103,27 @@ export default function ProfileViewScreen({ userId, embedded, actions, onLike, l
   return (
     <Container {...containerProps}>
       {/* Hero */}
-      {hero ? (
-        <View style={[styles.heroWrap, { backgroundColor: theme.heroBg, borderColor: theme.border }]}>
+      <View style={[styles.heroWrap, { backgroundColor: theme.heroBg, borderColor: theme.border }]}> 
+        {hero ? (
           <Image source={{ uri: hero }} style={styles.heroImage} />
-          <View style={styles.heroShade} />
-          <View style={[styles.heroOverlay, actions ? { paddingRight: 72 } : null]}>
-            <View style={[styles.badge, { backgroundColor: theme.badgeBg, borderColor: theme.badgeBorder }]}><Text style={[styles.badgeText, { color: resolvedThemeMode === 'light' ? theme.text : '#fff' }]}>New here</Text></View>
-            <Text style={[styles.heroName]}>{(profile?.name || currentUser.name || 'User')}{age !== undefined ? `, ${age}` : ''}</Text>
+        ) : (
+          <View style={[styles.heroImage, { alignItems: 'center', justifyContent: 'center' }]}> 
+            {loading ? (
+              <ActivityIndicator color={theme.accent} />
+            ) : (
+              <Text style={{ color: theme.muted }}>No photos yet</Text>
+            )}
           </View>
-          {actions ? <View pointerEvents="box-none" style={styles.actionsOverlay}>{actions}</View> : null}
+        )}
+        <View style={styles.heroShade} />
+        <View style={[styles.heroOverlay, actions ? { paddingRight: 72 } : null]}>
+          <View style={[styles.badge, { backgroundColor: theme.badgeBg, borderColor: theme.badgeBorder }]}>
+            <Text style={[styles.badgeText, { color: resolvedThemeMode === 'light' ? theme.text : '#fff' }]}>{loading ? 'Loading…' : 'Profile'}</Text>
+          </View>
+          <Text style={[styles.heroName]} numberOfLines={1}>{(profile?.name || currentUser.name || 'User')}{age !== undefined ? `, ${age}` : ''}</Text>
         </View>
-      ) : (
-        <View style={[styles.heroWrap, { alignItems: 'center', justifyContent: 'center', borderWidth: 1, backgroundColor: theme.heroBg, borderColor: theme.border }]}> 
-          <Text style={{ color: theme.muted }}>Add photos to showcase your profile</Text>
-        </View>
-      )}
+        {actions ? <View pointerEvents="box-none" style={styles.actionsOverlay}>{actions}</View> : null}
+      </View>
 
       {/* About me */}
       <View style={[styles.cardRounded, { backgroundColor: theme.card, borderColor: theme.border }]}>
