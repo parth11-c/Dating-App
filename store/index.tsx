@@ -5,9 +5,10 @@ import type { StoreState, User } from './types';
 import { supabase } from '@/lib/supabase';
 import { router } from 'expo-router';
 
-// Storage bucket for post images (configurable via env)
+// Storage buckets (configurable via env)
 const POSTS_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_POSTS_BUCKET || 'post-images';
 const AVATARS_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_AVATARS_BUCKET || 'avatars';
+const PHOTOS_BUCKET_FALLBACK = process.env.EXPO_PUBLIC_SUPABASE_PHOTOS_BUCKET || 'profile-photos';
 
 type StoreContextType = StoreState & {
   signIn: (email: string, password: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
@@ -41,11 +42,30 @@ export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
       const uid = session.user.id;
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
       // If profile row doesn't exist, create a minimal one so updates persist
-      if (!profile) {
+      let ensured = profile as any | null;
+      if (!ensured) {
         const initialName = (session.user.user_metadata as any)?.name || session.user.email || 'User';
         await supabase.from('profiles').upsert({ id: uid, name: initialName }, { onConflict: 'id' });
+        ensured = { id: uid, name: initialName } as any;
       }
-      const user: User = { id: uid, name: (profile?.name) || (session.user.user_metadata as any)?.name || session.user.email || 'User', avatar: profile?.avatar_url };
+      // If avatar is missing, try to use the first uploaded photo as a fallback and persist it
+      let avatarUrl: string | undefined = ensured?.avatar_url || undefined;
+      if (!avatarUrl) {
+        try {
+          const { data: ph } = await supabase
+            .from('photos')
+            .select('image_url')
+            .eq('user_id', uid)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          const first = (ph as any[] | null)?.[0]?.image_url as string | undefined;
+          if (first) {
+            await supabase.from('profiles').upsert({ id: uid, avatar_url: first }, { onConflict: 'id' });
+            avatarUrl = first;
+          }
+        } catch {}
+      }
+      const user: User = { id: uid, name: (ensured?.name) || (session.user.user_metadata as any)?.name || session.user.email || 'User', avatar: avatarUrl };
       setState((prev) => ({ ...prev, currentUser: user }));
     } else {
       setState((prev) => ({ ...prev, currentUser: { id: '', name: '' } }));
@@ -252,18 +272,30 @@ export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
       ext === 'heif' ? 'image/heif' :
       'image/jpeg';
     const filename = `${userId}/${simpleId()}.${ext}`;
+    // Try avatars bucket first
     const { error } = await supabase.storage
       .from(AVATARS_BUCKET)
       .upload(filename, arrayBuffer, { contentType, upsert: false });
-    if (error) {
-      const reason = (error as any)?.message || String(error);
-      if (reason?.toLowerCase().includes('bucket') && reason?.toLowerCase().includes('not found')) {
-        throw new Error(`Supabase storage bucket "${AVATARS_BUCKET}" not found. Create it in your Supabase project (Storage > Create bucket) and make it public or adjust EXPO_PUBLIC_SUPABASE_AVATARS_BUCKET.`);
-      }
-      throw error;
+    if (!error) {
+      const { data } = supabase.storage.from(AVATARS_BUCKET).getPublicUrl(filename);
+      return data.publicUrl;
     }
-    const { data } = supabase.storage.from(AVATARS_BUCKET).getPublicUrl(filename);
-    return data.publicUrl;
+    // If avatars bucket missing, fallback to photos bucket
+    const reason = (error as any)?.message || String(error);
+    if (reason?.toLowerCase().includes('bucket') && reason?.toLowerCase().includes('not found')) {
+      const fallbackName = `${userId}/${simpleId()}.${ext}`;
+      const { error: fbErr } = await supabase.storage
+        .from(PHOTOS_BUCKET_FALLBACK)
+        .upload(fallbackName, arrayBuffer, { contentType, upsert: false });
+      if (fbErr) {
+        const fbReason = (fbErr as any)?.message || String(fbErr);
+        throw new Error(`Supabase storage bucket "${AVATARS_BUCKET}" not found and fallback to "${PHOTOS_BUCKET_FALLBACK}" failed: ${fbReason}. Please create one of these buckets and make it public or set the env vars.`);
+      }
+      const { data: fbData } = supabase.storage.from(PHOTOS_BUCKET_FALLBACK).getPublicUrl(fallbackName);
+      return fbData.publicUrl;
+    }
+    // Other errors
+    throw error;
   }
 
   const value = useMemo<StoreContextType>(() => ({

@@ -83,6 +83,22 @@ export default function ChatTab() {
           .select('id, name, avatar_url')
           .in('id', others);
         for (const p of profs || []) profileMap[(p as any).id] = p as any;
+        // Fallback: fill avatar_url from first photo if missing
+        try {
+          const { data: photos } = await supabase
+            .from('photos')
+            .select('user_id, image_url, created_at')
+            .in('user_id', others)
+            .order('created_at', { ascending: false });
+          const firstPhotoById: Record<string, string | undefined> = {};
+          for (const ph of (photos as any[]) || []) {
+            const uid = (ph as any).user_id as string;
+            if (!firstPhotoById[uid]) firstPhotoById[uid] = (ph as any).image_url as string;
+          }
+          for (const uid of Object.keys(profileMap)) {
+            if (!profileMap[uid]?.avatar_url) profileMap[uid].avatar_url = firstPhotoById[uid] || null;
+          }
+        } catch {}
       }
       const enriched = rows.map(m => ({ ...m, other: profileMap[m.user1_id === myId ? m.user2_id : m.user1_id] }));
       setMatches(enriched);

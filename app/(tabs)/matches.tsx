@@ -87,6 +87,22 @@ export default function MatchesScreen() {
           .select('id, name, avatar_url')
           .in('id', others);
         for (const p of profs || []) profiles[p.id] = p as any;
+        // Fallback: get first photo per user to use as avatar if avatar_url is missing
+        try {
+          const { data: photos } = await supabase
+            .from('photos')
+            .select('user_id, image_url, created_at')
+            .in('user_id', others)
+            .order('created_at', { ascending: false });
+          const firstPhotoById: Record<string, string | undefined> = {};
+          for (const ph of (photos as any[]) || []) {
+            const uid = (ph as any).user_id as string;
+            if (!firstPhotoById[uid]) firstPhotoById[uid] = (ph as any).image_url as string;
+          }
+          for (const uid of Object.keys(profiles)) {
+            if (!profiles[uid]?.avatar_url) profiles[uid].avatar_url = firstPhotoById[uid] || null;
+          }
+        } catch {}
       }
 
       if (!error && data) {

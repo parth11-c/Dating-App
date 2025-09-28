@@ -23,7 +23,7 @@ type Profile = {
 type Photo = { id: number; image_url: string };
 
 export default function ProfileScreen() {
-  const { currentUser, resolvedThemeMode } = useStore();
+  const { currentUser, resolvedThemeMode, updateProfile } = useStore();
   const theme = useMemo(() => {
     if (resolvedThemeMode === 'light') {
       return {
@@ -57,6 +57,7 @@ export default function ProfileScreen() {
   const [dobYear, setDobYear] = React.useState<string>('');
   const [dobMonth, setDobMonth] = React.useState<string>('');
   const [dobDay, setDobDay] = React.useState<string>('');
+  const [avatarMenuOpen, setAvatarMenuOpen] = React.useState(false);
 
   // Completion helpers
   const isComplete = React.useMemo(() => {
@@ -128,21 +129,41 @@ export default function ProfileScreen() {
       });
       if (result.canceled || !result.assets?.[0]?.uri) return;
       const assetUri = result.assets[0].uri;
-      const res = await fetch(assetUri);
-      const arrayBuffer = await res.arrayBuffer();
-      const lower = assetUri.toLowerCase();
-      let ext = 'jpg';
-      if (lower.includes('.png')) ext = 'png';
-      else if (lower.includes('.webp')) ext = 'webp';
-      const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-      const filename = `${currentUser.id}/avatar_${Date.now().toString(36)}.${ext}`;
-      const { error: upErr } = await supabase.storage.from(PHOTOS_BUCKET).upload(filename, arrayBuffer, { contentType, upsert: false });
-      if (upErr) throw upErr;
-      const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(filename);
-      const publicUrl = data.publicUrl;
-      setProfile(prev => (prev ? { ...prev, avatar_url: publicUrl } : prev));
+      const res = await updateProfile({ avatarUri: assetUri });
+      if (!res.ok) {
+        Alert.alert('Avatar update failed', res.reason);
+        return;
+      }
+      setAvatarMenuOpen(false);
+      await load();
     } catch (e: any) {
-      Alert.alert('Avatar upload failed', e?.message || 'Please try again.');
+      Alert.alert('Avatar update failed', e?.message || 'Please try again.');
+    }
+  };
+
+  const captureAvatar = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'We need camera permission to take a photo.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.9,
+        allowsEditing: true,
+        aspect: [1,1],
+      });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      const assetUri = result.assets[0].uri;
+      const res = await updateProfile({ avatarUri: assetUri });
+      if (!res.ok) {
+        Alert.alert('Avatar update failed', res.reason);
+        return;
+      }
+      setAvatarMenuOpen(false);
+      await load();
+    } catch (e: any) {
+      Alert.alert('Avatar update failed', e?.message || 'Please try again.');
     }
   };
 
@@ -376,7 +397,18 @@ export default function ProfileScreen() {
     return out;
   }, [profile?.gender, profile?.location, age]);
 
-  const hero = photos[0]?.image_url;
+  const hero = profile?.avatar_url || photos[0]?.image_url;
+
+  // Auto-set avatar once if missing, using first photo
+  const autoAvatarSetRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!autoAvatarSetRef.current && profile && !profile.avatar_url && photos && photos.length > 0 && photos[0]?.image_url) {
+      autoAvatarSetRef.current = true;
+      updateProfile({ avatarUri: photos[0].image_url })
+        .then(() => load())
+        .catch(() => {});
+    }
+  }, [profile?.avatar_url, photos?.length]);
 
   if (loading) {
     return (
@@ -389,33 +421,49 @@ export default function ProfileScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      {/* Top profile header: small circular image, name, and View/Edit buttons */}
+      {/* Centered profile header: large circular image, centered name, and two centered buttons */}
       <View style={[styles.topHeader, { borderBottomColor: theme.border }]}>
-        <View style={styles.picRow}>
-          <View style={styles.picWrap}>
+        <View style={styles.centerHeader}>
+          <View style={styles.centerPicWrap}>
             {hero ? (
-              <Image source={{ uri: hero }} style={styles.pic} />
+              <Image source={{ uri: hero }} style={styles.centerPic} />
             ) : (
-              <View style={[styles.pic, { backgroundColor: theme.avatarBg, alignItems: 'center', justifyContent: 'center' }]}> 
-                <Ionicons name="person" size={28} color={theme.sub} />
+              <View style={[styles.centerPic, { backgroundColor: theme.avatarBg, alignItems: 'center', justifyContent: 'center' }]}> 
+                <Ionicons name="person" size={48} color={theme.sub} />
               </View>
             )}
           </View>
-          <Text style={[styles.profileTitle, { color: theme.text }]}>{profile?.name || currentUser.name || 'User'}</Text>
-        </View>
-        <View style={styles.toggleRow}>
-          <TouchableOpacity
-            style={[styles.toggleBtn, { backgroundColor: theme.buttonBg, borderColor: theme.buttonBorder }, styles.toggleBtnActive, resolvedThemeMode === 'light' ? { backgroundColor: '#fff', borderColor: '#fff' } : null]}
-            onPress={() => router.push('/(tabs)/profile-view' as any)}
-          >
-            <Text style={[styles.toggleBtnText, { color: resolvedThemeMode === 'light' ? '#000' : '#000' }, styles.toggleBtnTextActive]}>View</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleBtn, { backgroundColor: theme.buttonBg, borderColor: theme.buttonBorder }]}
-            onPress={() => router.push('/(tabs)/profile-edit' as any)}
-          >
-            <Text style={[styles.toggleBtnText, { color: resolvedThemeMode === 'light' ? theme.text : '#ddd' }]}>Edit</Text>
-          </TouchableOpacity>
+          <Text style={[styles.centerName, { color: theme.text }]}>{profile?.name || currentUser.name || 'User'}</Text>
+          <View style={styles.centerButtonsRow}>
+            <TouchableOpacity
+              style={[styles.centerBtn, styles.centerBtnPrimary, resolvedThemeMode === 'light' ? { backgroundColor: '#fff', borderColor: '#fff' } : null]}
+              onPress={() => router.push('/(tabs)/profile-view' as any)}
+            >
+              <Text style={[styles.centerBtnText, styles.centerBtnTextPrimary]}>View</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.centerBtn, { backgroundColor: theme.buttonBg, borderColor: theme.buttonBorder }]}
+              onPress={() => router.push('/(tabs)/profile-edit' as any)}
+            >
+              <Text style={[styles.centerBtnText, { color: resolvedThemeMode === 'light' ? theme.text : '#ddd' }]}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+          {avatarMenuOpen && (
+            <View style={styles.avatarMenu}>
+              <TouchableOpacity style={[styles.menuBtn, styles.menuPrimary]} onPress={pickAvatar}>
+                <Text style={[styles.menuBtnText, styles.menuBtnTextPrimary]}>Set from library</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuBtn} onPress={captureAvatar}>
+                <Text style={styles.menuBtnText}>Take photo</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuBtn} onPress={pickAndUploadPhoto}>
+                <Text style={styles.menuBtnText}>Upload different pic</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuCancel} onPress={() => setAvatarMenuOpen(false)}>
+                <Text style={styles.menuCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </View>
 
@@ -513,4 +561,22 @@ const styles = StyleSheet.create({
   toggleBtnActive: { backgroundColor: '#fff', borderColor: '#fff' },
   toggleBtnText: { color: '#ddd', fontWeight: '800', fontSize: 15 },
   toggleBtnTextActive: { color: '#000' },
+  // Centered header styles
+  centerHeader: { alignItems: 'center', paddingTop: 12, paddingBottom: 16 },
+  centerPicWrap: { width: 120, height: 120, borderRadius: 60, overflow: 'hidden', borderWidth: 2, borderColor: '#2a2a2d' },
+  centerPic: { width: '100%', height: '100%', borderRadius: 60 },
+  centerName: { marginTop: 10, color: '#fff', fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  centerButtonsRow: { flexDirection: 'row', gap: 10, marginTop: 12, justifyContent: 'center' },
+  centerBtn: { paddingVertical: 10, paddingHorizontal: 18, borderRadius: 14, borderWidth: 1, alignItems: 'center', minWidth: 120 },
+  centerBtnPrimary: { backgroundColor: '#ffffff', borderColor: '#ffffff' },
+  centerBtnText: { color: '#ddd', fontWeight: '800', fontSize: 15 },
+  centerBtnTextPrimary: { color: '#000' },
+  // Avatar action menu
+  avatarMenu: { width: '100%', paddingHorizontal: 12, marginTop: 12 },
+  menuBtn: { width: '100%', backgroundColor: '#1f1f1f', borderWidth: 1, borderColor: '#333', borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginTop: 8 },
+  menuPrimary: { backgroundColor: '#ffffff', borderColor: '#ffffff' },
+  menuBtnText: { color: '#ddd', fontWeight: '800' },
+  menuBtnTextPrimary: { color: '#000' },
+  menuCancel: { marginTop: 8, alignItems: 'center' },
+  menuCancelText: { color: '#9aa0a6', fontWeight: '600' },
 });

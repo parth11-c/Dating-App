@@ -119,6 +119,12 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
       headerShown: true,
+      headerStyle: { backgroundColor: theme.bg },
+      headerBackground: () => (
+        <View style={{ flex: 1, backgroundColor: theme.bg }}>
+          <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: theme.border }} />
+        </View>
+      ),
       headerShadowVisible: theme.headerShadow,
       headerTitleStyle: { color: theme.text, marginVertical: 0 },
       headerTitleAlign: 'center',
@@ -210,7 +216,9 @@ export default function TabsLayout() {
         name="profile"
         options={{
           title: "Profile",
-          headerTitle: () => <View />, 
+          headerTitle: () => (
+            <Text style={{ color: theme.text, fontSize: 24, fontWeight: '800', letterSpacing: -0.5 }}>MatchUp</Text>
+          ), 
           tabBarIcon: ({ color, size }: { color: string; size: number }) => <FontAwesome name="user" color={color} size={size} />,
           headerRight: () => (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>

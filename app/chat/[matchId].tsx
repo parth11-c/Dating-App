@@ -66,7 +66,20 @@ export default function ChatByMatchScreen() {
       if (!error && m) {
         const otherId = m.user1_id === myId ? m.user2_id : m.user1_id;
         const { data: p } = await supabase.from('profiles').select('id, name, avatar_url').eq('id', otherId).single();
-        if (mounted) setPeer(p as any);
+        let peerData = p as any;
+        if (peerData && !peerData.avatar_url) {
+          try {
+            const { data: ph } = await supabase
+              .from('photos')
+              .select('image_url, created_at')
+              .eq('user_id', otherId)
+              .order('created_at', { ascending: false })
+              .limit(1);
+            const first = (ph as any[] | null)?.[0]?.image_url as string | undefined;
+            if (first) peerData = { ...peerData, avatar_url: first };
+          } catch {}
+        }
+        if (mounted) setPeer(peerData as any);
       }
     })();
     return () => { mounted = false; };
