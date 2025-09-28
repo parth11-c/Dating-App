@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert, TextInput, ActivityIndicator, Platform, ScrollView } from "react-native";
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,7 +23,23 @@ type Profile = {
 type Photo = { id: number; image_url: string };
 
 export default function ProfileScreen() {
-  const { currentUser } = useStore();
+  const { currentUser, resolvedThemeMode } = useStore();
+  const theme = useMemo(() => {
+    if (resolvedThemeMode === 'light') {
+      return {
+        bg: '#FFF5F8', text: '#1a1a1a', sub: '#6b5b61', muted: '#7d6a72',
+        card: '#ffffff', border: '#f0cfd8', chipBg: '#fff', chipBorder: '#edd0d9', chipText: '#5a4e53',
+        surface: '#ffffff', avatarBg: '#f3dbe3', accent: '#ff5b80', accentSubtle: '#ffe9f0',
+        buttonBg: '#ffffff', buttonBorder: '#f0cfd8',
+      } as const;
+    }
+    return {
+      bg: '#0a0a0a', text: '#fff', sub: '#888', muted: '#9aa0a6',
+      card: '#111', border: '#222', chipBg: '#1a1a1a', chipBorder: '#2a2a2d', chipText: '#ddd',
+      surface: '#0f0f0f', avatarBg: '#222', accent: '#ff5b80', accentSubtle: '#1a0f14',
+      buttonBg: '#1f1f1f', buttonBorder: '#333',
+    } as const;
+  }, [resolvedThemeMode]);
   const [loading, setLoading] = React.useState(true);
   const [profile, setProfile] = React.useState<Profile | null>(null);
   const [photos, setPhotos] = React.useState<Photo[]>([]);
@@ -349,33 +365,33 @@ export default function ProfileScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* Top profile header: small circular image, name, and View/Edit buttons */}
-      <View style={styles.topHeader}>
+      <View style={[styles.topHeader, { borderBottomColor: theme.border }]}>
         <View style={styles.picRow}>
           <View style={styles.picWrap}>
             {hero ? (
               <Image source={{ uri: hero }} style={styles.pic} />
             ) : (
-              <View style={[styles.pic, { backgroundColor: '#222', alignItems: 'center', justifyContent: 'center' }]}>
-                <Ionicons name="person" size={28} color="#666" />
+              <View style={[styles.pic, { backgroundColor: theme.avatarBg, alignItems: 'center', justifyContent: 'center' }]}> 
+                <Ionicons name="person" size={28} color={theme.sub} />
               </View>
             )}
           </View>
-          <Text style={styles.profileTitle}>{profile?.name || currentUser.name || 'User'}</Text>
+          <Text style={[styles.profileTitle, { color: theme.text }]}>{profile?.name || currentUser.name || 'User'}</Text>
         </View>
         <View style={styles.toggleRow}>
           <TouchableOpacity
-            style={[styles.toggleBtn, styles.toggleBtnActive]}
+            style={[styles.toggleBtn, { backgroundColor: theme.buttonBg, borderColor: theme.buttonBorder }, styles.toggleBtnActive, resolvedThemeMode === 'light' ? { backgroundColor: '#fff', borderColor: '#fff' } : null]}
             onPress={() => router.push('/(tabs)/profile-view' as any)}
           >
-            <Text style={[styles.toggleBtnText, styles.toggleBtnTextActive]}>View</Text>
+            <Text style={[styles.toggleBtnText, { color: resolvedThemeMode === 'light' ? '#000' : '#000' }, styles.toggleBtnTextActive]}>View</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.toggleBtn}
+            style={[styles.toggleBtn, { backgroundColor: theme.buttonBg, borderColor: theme.buttonBorder }]}
             onPress={() => router.push('/(tabs)/profile-edit' as any)}
           >
-            <Text style={styles.toggleBtnText}>Edit</Text>
+            <Text style={[styles.toggleBtnText, { color: resolvedThemeMode === 'light' ? theme.text : '#ddd' }]}>Edit</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -386,7 +402,7 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a" },
+  container: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", marginBottom: 6 ,marginTop: 16},
   avatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: "#444", marginRight: 12 },
   name: { color: "#fff", fontSize: 20, fontWeight: "800", marginBottom: 2 },

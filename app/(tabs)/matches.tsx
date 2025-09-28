@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
@@ -14,10 +14,37 @@ interface MatchRow {
 }
 
 export default function MatchesScreen() {
-  const { currentUser } = useStore();
+  const { currentUser, themeMode } = useStore();
   const [loading, setLoading] = React.useState(true);
   const [matches, setMatches] = React.useState<MatchRow[]>([]);
   const [incoming, setIncoming] = React.useState<{ id: number; liker_id: string; profile?: { id: string; name?: string; avatar_url?: string | null } }[]>([]);
+
+  const theme = useMemo(() => {
+    if (themeMode === 'light') {
+      return {
+        bg: '#FFF5F8',
+        card: '#ffffff',
+        border: '#f0cfd8',
+        text: '#1a1a1a',
+        muted: '#7d6a72',
+        sub: '#6b5b61',
+        avatarBg: '#f3dbe3',
+        accent: '#ff5b80',
+        accentSubtle: '#ffe9f0',
+      } as const;
+    }
+    return {
+      bg: '#0a0a0a',
+      card: '#111',
+      border: '#222',
+      text: '#fff',
+      muted: '#9aa0a6',
+      sub: '#888',
+      avatarBg: '#222',
+      accent: '#ff5b80',
+      accentSubtle: '#1a0f14',
+    } as const;
+  }, [themeMode]);
 
   const load = React.useCallback(async () => {
     if (!currentUser?.id) return;
@@ -98,25 +125,24 @@ export default function MatchesScreen() {
       await load();
       Alert.alert('Liked back', 'If they liked you, it’s a match!');
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Failed to like back');
     }
   };
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { alignItems: 'center', justifyContent: 'center' }]}>
-        <ActivityIndicator color="#fff" />
-        <Text style={{ color: '#9aa0a6', marginTop: 8 }}>Loading matches…</Text>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.bg, alignItems: 'center', justifyContent: 'center' }]} edges={['left','right','bottom']}> 
+        <ActivityIndicator color={themeMode === 'light' ? theme.accent : '#fff'} />
+        <Text style={{ color: theme.muted, marginTop: 8 }}>Loading matches…</Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['left','right','bottom']}>
       {/* Incoming likes preview */}
-      <Text style={styles.section}>Who liked you</Text>
+      <Text style={[styles.section, { color: theme.text }]}>Who liked you</Text>
       {incoming.length === 0 ? (
-        <Text style={[styles.muted, { paddingHorizontal: 12, marginBottom: 8 }]}>No incoming likes yet.</Text>
+        <Text style={[styles.muted, { color: theme.muted, paddingHorizontal: 12, marginBottom: 8 }]}>No incoming likes yet.</Text>
       ) : (
         <View>
           <FlatList
@@ -126,15 +152,15 @@ export default function MatchesScreen() {
             style={{ paddingHorizontal: 12, marginBottom: 12 }}
             contentContainerStyle={{ gap: 10 }}
             renderItem={({ item }) => (
-              <View style={styles.likeCard}>
+              <View style={[styles.likeCard, { backgroundColor: theme.card, borderColor: theme.border }] }>
                 {item.profile?.avatar_url ? (
                   <Image source={{ uri: item.profile.avatar_url }} style={styles.likeAvatar} />
                 ) : (
-                  <View style={styles.likeAvatar} />
+                  <View style={[styles.likeAvatar, { backgroundColor: theme.avatarBg, borderColor: theme.border }]} />
                 )}
-                <Text style={styles.likeName} numberOfLines={1}>{item.profile?.name || 'Someone'}</Text>
-                <TouchableOpacity style={styles.likeBtn} onPress={() => likeBack(item.liker_id)}>
-                  <Text style={styles.likeBtnText}>Like back</Text>
+                <Text style={[styles.likeName, { color: theme.text }]} numberOfLines={1}>{item.profile?.name || 'Someone'}</Text>
+                <TouchableOpacity style={[styles.likeBtn, { backgroundColor: theme.accentSubtle, borderColor: themeMode === 'light' ? theme.border : '#2a1a22' }]} onPress={() => likeBack(item.liker_id)}>
+                  <Text style={[styles.likeBtnText, { color: theme.accent }]}>Like back</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -144,7 +170,7 @@ export default function MatchesScreen() {
 
       {matches.length === 0 ? (
         <View style={styles.center}> 
-          <Text style={styles.muted}>No matches yet. Keep exploring!</Text>
+          <Text style={[styles.muted, { color: theme.muted }]}>No matches yet. Keep exploring!</Text>
         </View>
       ) : (
         <FlatList
@@ -152,17 +178,17 @@ export default function MatchesScreen() {
           keyExtractor={(m) => String(m.id)}
           contentContainerStyle={{ padding: 12, paddingBottom: 100 }}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.row} onPress={() => router.push(`/chat/${item.id}` as any)}>
+            <View style={[styles.row, { backgroundColor: theme.card, borderColor: theme.border }]}>
               {item.other?.avatar_url ? (
                 <Image source={{ uri: item.other.avatar_url }} style={styles.avatar} />
               ) : (
-                <View style={styles.avatar} />
+                <View style={[styles.avatar, { backgroundColor: theme.avatarBg, borderColor: theme.border }]} />
               )}
-              <View style={{ flex: 1 }}>
-                <Text style={styles.title} numberOfLines={1}>{item.other?.name || 'Match'}</Text>
-                <Text style={styles.sub} numberOfLines={1}>Matched on {new Date(item.created_at).toLocaleDateString()}</Text>
-              </View>
-            </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1 }} onPress={() => router.push(`/profile/${item.other?.id}` as any)}>
+                <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>{item.other?.name || 'Match'}</Text>
+                <Text style={[styles.sub, { color: theme.sub }]} numberOfLines={1}>Matched on {new Date(item.created_at).toLocaleDateString()}</Text>
+              </TouchableOpacity>
+            </View>
           )}
         />
       )}
@@ -171,17 +197,17 @@ export default function MatchesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   muted: { color: '#9aa0a6' },
-  section: { color: '#fff', fontWeight: '800', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, fontSize: 16 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#111', borderWidth: 1, borderColor: '#222', borderRadius: 14, padding: 14, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
-  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#222', borderWidth: 1, borderColor: '#333' },
-  title: { color: '#fff', fontWeight: '700' },
-  sub: { color: '#888', fontSize: 12 },
-  likeCard: { width: 120, backgroundColor: '#111', borderColor: '#222', borderWidth: 1, borderRadius: 14, padding: 12, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
-  likeAvatar: { width: 68, height: 68, borderRadius: 34, backgroundColor: '#222', borderWidth: 1, borderColor: '#333', marginBottom: 8 },
-  likeName: { color: '#fff', fontWeight: '700', marginBottom: 6 },
-  likeBtn: { backgroundColor: '#1a0f14', borderWidth: 1, borderColor: '#2a1a22', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12 },
-  likeBtnText: { color: '#ff5b80', fontWeight: '800' },
+  section: { fontWeight: '800', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, fontSize: 16 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 14, padding: 14, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  avatar: { width: 48, height: 48, borderRadius: 24, borderWidth: 1 },
+  title: { fontWeight: '700' },
+  sub: { fontSize: 12 },
+  likeCard: { width: 120, borderWidth: 1, borderRadius: 14, padding: 12, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  likeAvatar: { width: 68, height: 68, borderRadius: 34, borderWidth: 1, marginBottom: 8 },
+  likeName: { fontWeight: '700', marginBottom: 6 },
+  likeBtn: { borderWidth: 1, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12 },
+  likeBtnText: { fontWeight: '800' },
 });

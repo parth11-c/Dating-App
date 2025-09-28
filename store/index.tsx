@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Appearance, ColorSchemeName } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { StoreState, User } from './types';
 import { supabase } from '@/lib/supabase';
 import { router } from 'expo-router';
@@ -14,6 +15,9 @@ type StoreContextType = StoreState & {
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
   updateProfile: (input: { name?: string; avatarUri?: string | null }) => Promise<{ ok: true } | { ok: false; reason: string }>;
+  toggleTheme: () => void;
+  setTheme: (mode: 'dark' | 'light' | 'system') => void;
+  resolvedThemeMode: 'dark' | 'light';
 };
 
 const StoreContext = createContext<StoreContextType | null>(null);
@@ -27,7 +31,8 @@ export const useStore = () => {
 };
 
 export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
-  const [state, setState] = useState<StoreState>({ currentUser: { id: '', name: '' } });
+  const [state, setState] = useState<StoreState>({ currentUser: { id: '', name: '' }, themeMode: 'dark' });
+  const [systemScheme, setSystemScheme] = useState<ColorSchemeName>(Appearance.getColorScheme());
 
   // Helpers
   const loadSession = useCallback(async () => {
@@ -49,9 +54,26 @@ export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     loadSession();
+    // Load persisted theme
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem('app.theme');
+        if (saved === 'light' || saved === 'dark' || saved === 'system') {
+          setState(prev => ({ ...prev, themeMode: saved }));
+        }
+      } catch {}
+    })();
     // No products subscription in dating app
     return () => {};
   }, [loadSession]);
+
+  // Listen to system appearance changes when in 'system' mode
+  useEffect(() => {
+    const sub = Appearance.addChangeListener(({ colorScheme }) => {
+      setSystemScheme(colorScheme);
+    });
+    return () => sub.remove();
+  }, []);
 
   // Listen for auth state changes globally to handle invalid refresh tokens or sign-outs
   useEffect(() => {
@@ -144,6 +166,25 @@ export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
     await Promise.all([loadSession()]);
   };
 
+  // Theme controls
+  const setTheme: StoreContextType['setTheme'] = (mode) => {
+    setState(prev => ({ ...prev, themeMode: mode }));
+    AsyncStorage.setItem('app.theme', mode).catch(() => {});
+  };
+  const toggleTheme: StoreContextType['toggleTheme'] = () => {
+    setState(prev => {
+      const base = prev.themeMode === 'system' ? (systemScheme ?? 'dark') : prev.themeMode;
+      const next = base === 'dark' ? 'light' : 'dark';
+      AsyncStorage.setItem('app.theme', next).catch(() => {});
+      return { ...prev, themeMode: next };
+    });
+  };
+
+  const resolvedThemeMode: 'dark' | 'light' = useMemo(() => {
+    if (state.themeMode === 'system') return (systemScheme ?? 'dark') === 'light' ? 'light' : 'dark';
+    return state.themeMode;
+  }, [state.themeMode, systemScheme]);
+
   function simpleId() {
     return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   }
@@ -232,6 +273,9 @@ export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
     signOut,
     refresh,
     updateProfile,
+    toggleTheme,
+    setTheme,
+    resolvedThemeMode,
   }), [state]);
 
   return (

@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Text, StyleSheet, Image, ScrollView } from "react-native";
+import React, { useMemo } from "react";
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useStore } from "@/store";
 import { supabase } from "@/lib/supabase";
@@ -34,10 +34,28 @@ type ProfileViewProps = {
   userId?: string;
   embedded?: boolean;
   actions?: React.ReactNode; // overlay actions rendered on hero
+  onLike?: () => void; // optional like handler to show per-photo like UI
+  liking?: boolean; // optional loading state for like
 };
 
-export default function ProfileViewScreen({ userId, embedded, actions }: ProfileViewProps) {
-  const { currentUser } = useStore();
+export default function ProfileViewScreen({ userId, embedded, actions, onLike, liking }: ProfileViewProps) {
+  const { currentUser, resolvedThemeMode } = useStore();
+  const theme = useMemo(() => {
+    if (resolvedThemeMode === 'light') {
+      return {
+        bg: '#FFF5F8', text: '#1a1a1a', sub: '#6b5b61', muted: '#7d6a72',
+        card: '#ffffff', border: '#f0cfd8', chipBg: '#fff', chipBorder: '#edd0d9', chipText: '#5a4e53',
+        heroBg: '#ffffff', badgeBg: '#ffffffcc', badgeBorder: '#f0cfd8',
+        likeBg: '#ffe9f0', likeBorder: '#f4cdd8', accent: '#ff5b80',
+      } as const;
+    }
+    return {
+      bg: '#0a0a0a', text: '#fff', sub: '#888', muted: '#9aa0a6',
+      card: '#111', border: '#222', chipBg: '#1a1a1a', chipBorder: '#2a2a2d', chipText: '#ddd',
+      heroBg: '#0f0f0f', badgeBg: 'rgba(255,255,255,0.06)', badgeBorder: 'rgba(255,255,255,0.12)',
+      likeBg: '#1a0f14', likeBorder: '#2a1a22', accent: '#ff5b80',
+    } as const;
+  }, [resolvedThemeMode]);
   const [profile, setProfile] = React.useState<Profile | null>(null);
   const [photos, setPhotos] = React.useState<Photo[]>([]);
   const [interestNames, setInterestNames] = React.useState<string[]>([]);
@@ -75,62 +93,83 @@ export default function ProfileViewScreen({ userId, embedded, actions }: Profile
   const hero = photos[0]?.image_url;
 
   const Container: any = embedded ? View : ScrollView;
-  const containerProps: any = embedded ? { style: styles.containerEmbedded } : { style: styles.container, contentContainerStyle: styles.content, showsVerticalScrollIndicator: false };
+  const containerProps: any = embedded ? { style: styles.containerEmbedded } : { style: [styles.container, { backgroundColor: theme.bg }], contentContainerStyle: styles.content, showsVerticalScrollIndicator: false };
+
+  // Keep name overlay at a consistent bottom position; apply right padding when actions exist to avoid overlap
 
   return (
     <Container {...containerProps}>
       {/* Hero */}
       {hero ? (
-        <View style={styles.heroWrap}>
+        <View style={[styles.heroWrap, { backgroundColor: theme.heroBg, borderColor: theme.border }]}>
           <Image source={{ uri: hero }} style={styles.heroImage} />
-          <View style={styles.heroOverlay}>
-            <View style={styles.badge}><Text style={styles.badgeText}>New here</Text></View>
-            <Text style={styles.heroName}>{(profile?.name || currentUser.name || 'User')}{age !== undefined ? `, ${age}` : ''}</Text>
+          <View style={styles.heroShade} />
+          <View style={[styles.heroOverlay, actions ? { paddingRight: 72 } : null]}>
+            <View style={[styles.badge, { backgroundColor: theme.badgeBg, borderColor: theme.badgeBorder }]}><Text style={[styles.badgeText, { color: resolvedThemeMode === 'light' ? theme.text : '#fff' }]}>New here</Text></View>
+            <Text style={[styles.heroName]}>{(profile?.name || currentUser.name || 'User')}{age !== undefined ? `, ${age}` : ''}</Text>
           </View>
-          {actions ? <View style={styles.actionsOverlay}>{actions}</View> : null}
+          {actions ? <View pointerEvents="box-none" style={styles.actionsOverlay}>{actions}</View> : null}
         </View>
       ) : (
-        <View style={[styles.heroWrap, { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#222' }]}> 
-          <Text style={{ color: '#888' }}>Add photos to showcase your profile</Text>
+        <View style={[styles.heroWrap, { alignItems: 'center', justifyContent: 'center', borderWidth: 1, backgroundColor: theme.heroBg, borderColor: theme.border }]}> 
+          <Text style={{ color: theme.muted }}>Add photos to showcase your profile</Text>
         </View>
       )}
 
       {/* About me */}
-      <View style={styles.cardRounded}>
-        <Text style={styles.cardTitle}>About me</Text>
+      <View style={[styles.cardRounded, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <Text style={[styles.cardTitle, { color: theme.text }]}>About me</Text>
         {chips.length === 0 ? (
-          <Text style={styles.mutedSmall}>Add more details to your profile.</Text>
+          <Text style={[styles.mutedSmall, { color: theme.muted }]}>Add more details to your profile.</Text>
         ) : (
           <View style={styles.chipsWrap}>
             {chips.map((c, idx) => (
-              <View key={`${c.label}-${idx}`} style={styles.chip}>
-                {c.icon ? <Ionicons name={c.icon as any} size={14} color="#bbb" style={{ marginRight: 6 }} /> : null}
-                <Text style={styles.chipText}>{c.label}</Text>
+              <View key={`${c.label}-${idx}`} style={[styles.chip, { backgroundColor: theme.chipBg, borderColor: theme.chipBorder }]}>
+                {c.icon ? <Ionicons name={c.icon as any} size={14} color={resolvedThemeMode === 'light' ? '#8a7c83' : '#bbb'} style={{ marginRight: 6 }} /> : null}
+                <Text style={[styles.chipText, { color: resolvedThemeMode === 'light' ? theme.chipText : '#ddd' }]}>{c.label}</Text>
               </View>
             ))}
           </View>
         )}
-        {profile?.bio ? <Text style={[styles.muted, { marginTop: 8 }]}>{profile.bio}</Text> : null}
+        {profile?.bio ? <Text style={[styles.muted, { color: theme.sub, marginTop: 8 }]}>{profile.bio}</Text> : null}
       </View>
 
       {/* Remaining photos */}
       {photos.slice(1).map((p) => (
-        <View key={p.id} style={styles.photoCard}>
+        <View key={p.id} style={[styles.photoCard, { backgroundColor: theme.heroBg, borderColor: theme.border }]}>
           <Image source={{ uri: p.image_url }} style={styles.photoImage} />
+          {onLike ? (
+            <View pointerEvents="box-none" style={styles.photoActionsOverlay}>
+              <View style={{ flex: 1 }} />
+              <TouchableOpacity
+                onPress={onLike}
+                disabled={!!liking}
+                style={[styles.likeFab, { backgroundColor: theme.likeBg, borderColor: theme.likeBorder }]}
+                accessibilityLabel="Like"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                {liking ? (
+                  <ActivityIndicator color={theme.accent} />
+                ) : (
+                  <Ionicons name="heart" size={22} color={theme.accent} />
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
       ))}
 
       {/* Interests */}
-      <View style={styles.cardRounded}>
-        <Text style={styles.cardTitle}>Interests</Text>
+      <View style={[styles.cardRounded, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <Text style={[styles.cardTitle, { color: theme.text }]}>Interests</Text>
         {interestNames.length === 0 ? (
-          <Text style={styles.mutedSmall}>Add your interests from the Interests tab.</Text>
+          <Text style={[styles.mutedSmall, { color: theme.muted }]}>Add your interests from the Interests tab.</Text>
         ) : (
           <View style={styles.chipsWrap}>
             {interestNames.map((n) => (
-              <View key={n} style={styles.chip}>
-                <Ionicons name={interestIcon(n) as any} size={14} color="#bbb" style={{ marginRight: 6 }} />
-                <Text style={styles.chipText}>{n}</Text>
+                <View key={n} style={[styles.chip, { backgroundColor: theme.chipBg, borderColor: theme.chipBorder }]}>
+                <Ionicons name={interestIcon(n) as any} size={14} color={resolvedThemeMode === 'light' ? '#8a7c83' : '#bbb'} style={{ marginRight: 6 }} />
+                <Text style={[styles.chipText, { color: resolvedThemeMode === 'light' ? theme.chipText : '#ddd' }]}>{n}</Text>
               </View>
             ))}
           </View>
@@ -159,11 +198,12 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   heroImage: { width: '100%', aspectRatio: 3/4, borderRadius: 24 },
-  heroOverlay: { position: 'absolute', left: 16, right: 16, bottom: 16 },
-  actionsOverlay: { position: 'absolute', left: 12, right: 12, bottom: 12, flexDirection: 'row', justifyContent: 'space-between' },
+  heroShade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 160, backgroundColor: 'rgba(0,0,0,0.45)' },
+  heroOverlay: { position: 'absolute', left: 16, right: 16, bottom: 16, zIndex: 2 },
+  actionsOverlay: { position: 'absolute', left: 12, right: 12, bottom: 12, flexDirection: 'row', justifyContent: 'flex-end', zIndex: 3 },
   badge: { alignSelf: 'flex-start', backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', marginBottom: 8 },
   badgeText: { color: '#fff', fontWeight: '700' },
-  heroName: { color: '#fff', fontSize: 28, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 8 },
+  heroName: { color: '#fff', fontSize: 28, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.9)', textShadowRadius: 12, textShadowOffset: { width: 0, height: 1 } },
   cardRounded: {
     backgroundColor: '#111',
     borderColor: '#222',
@@ -199,4 +239,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   photoImage: { width: '100%', aspectRatio: 3/4 },
+  photoActionsOverlay: { position: 'absolute', left: 12, right: 12, bottom: 12, flexDirection: 'row', alignItems: 'center' },
+  likeFab: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a0f14', borderWidth: 1, borderColor: '#2a1a22' },
 });
