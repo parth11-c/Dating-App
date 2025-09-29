@@ -135,15 +135,16 @@ export default function TabsLayout() {
         <Text style={{ color: theme.text, fontSize: 24, fontWeight: '800', letterSpacing: -0.5 }}>MatchUp</Text>
       ),
       headerTintColor: theme.text,
-      headerRight: () => <HeaderToggle />,
       tabBarActiveTintColor: resolvedThemeMode === 'light' ? theme.accent : '#fff',
       tabBarInactiveTintColor: theme.tabInactive,
       tabBarHideOnKeyboard: false,
-      tabBarBackground: () => (
-        <View style={{ flex: 1, backgroundColor: theme.bg }}>
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: theme.border }} />
-        </View>
-  )}}>
+      tabBarStyle: {
+        backgroundColor: theme.bg,
+        borderTopColor: resolvedThemeMode === 'light' ? theme.border : '#222222',
+        borderTopWidth: resolvedThemeMode === 'light' ? StyleSheet.hairlineWidth : 1,
+      },
+    }}
+    >
       <Tabs.Screen
         name="home"
         options={{
@@ -151,7 +152,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }: { color: string; size: number }) => <FontAwesome name="home" color={color} size={size} />,
         }}
         listeners={{
-          tabPress: (e) => {
+          tabPress: (e: any) => {
             if (!profileComplete) {
               e.preventDefault();
               Alert.alert('Complete your profile', 'Please complete onboarding first.');
@@ -167,7 +168,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }: { color: string; size: number }) => <FontAwesome name="heart" color={color} size={size} />,
         }}
         listeners={{
-          tabPress: (e) => {
+          tabPress: (e: any) => {
             if (!profileComplete) {
               e.preventDefault();
               Alert.alert('Complete your profile', 'Please complete your profile first.');

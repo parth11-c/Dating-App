@@ -52,9 +52,9 @@ export default function SignUpScreen() {
           <View style={styles.centerWrap}>
             <View style={styles.card}>
               <View style={styles.header}>
-                <Text style={styles.logo}>ClgMart</Text>
+                <Text style={styles.logo}>MatchUp</Text>
                 <Text style={styles.title}>Create Account</Text>
-                <Text style={styles.subtitle}>Join the college marketplace</Text>
+                <Text style={styles.subtitle}>Make new friends, find your match</Text>
               </View>
 
               <View style={styles.form}>
@@ -62,7 +62,7 @@ export default function SignUpScreen() {
                   <TextInput
                     style={styles.input}
                     placeholder="Full Name"
-                    placeholderTextColor="#7a7a7a"
+                    placeholderTextColor="#9b7f89"
                     value={fullName}
                     onChangeText={setFullName}
                     autoCapitalize="words"
@@ -75,7 +75,7 @@ export default function SignUpScreen() {
                   <TextInput
                     style={styles.input}
                     placeholder="Phone"
-                    placeholderTextColor="#7a7a7a"
+                    placeholderTextColor="#9b7f89"
                     value={phone}
                     onChangeText={setPhone}
                     keyboardType="phone-pad"
@@ -86,7 +86,7 @@ export default function SignUpScreen() {
                   <TextInput
                     style={styles.input}
                     placeholder="Email"
-                    placeholderTextColor="#7a7a7a"
+                    placeholderTextColor="#9b7f89"
                     value={email}
                     onChangeText={setEmail}
                     autoCapitalize="none"
@@ -99,7 +99,7 @@ export default function SignUpScreen() {
                     <TextInput
                       style={styles.passwordInput}
                       placeholder="Password"
-                      placeholderTextColor="#7a7a7a"
+                      placeholderTextColor="#9b7f89"
                       value={password}
                       onChangeText={setPassword}
                       autoCapitalize="none"
@@ -116,7 +116,7 @@ export default function SignUpScreen() {
                     <TextInput
                       style={styles.passwordInput}
                       placeholder="Confirm Password"
-                      placeholderTextColor="#7a7a7a"
+                      placeholderTextColor="#9b7f89"
                       value={confirmPassword}
                       onChangeText={setConfirmPassword}
                       autoCapitalize="none"
@@ -129,7 +129,7 @@ export default function SignUpScreen() {
                 </View>
 
                 <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={handleSignUp} disabled={loading}>
-                  {loading ? <ActivityIndicator color="#000" /> : (
+                  {loading ? <ActivityIndicator color="#fff" /> : (
                     <Text style={styles.buttonText}>Create Account</Text>
                   )}
                 </TouchableOpacity>
@@ -150,29 +150,29 @@ export default function SignUpScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a" },
+  container: { flex: 1, backgroundColor: "#FFF5F8" },
   kav: { flex: 1, paddingHorizontal: responsiveValue(16, 24), paddingVertical: responsiveValue(10, 20) },
   scroll: { flexGrow: 1 },
   centerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: responsiveValue(20, 40) },
-  card: { width: '100%', maxWidth: 420, backgroundColor: '#0f0f10', borderRadius: 16, borderWidth: 1, borderColor: '#1f1f22', padding: responsiveValue(18, 24), ...shadows.medium },
+  card: { width: '100%', maxWidth: 420, backgroundColor: '#ffffff', borderRadius: 16, borderWidth: 1, borderColor: '#f0cfd8', padding: responsiveValue(18, 24), ...shadows.medium },
   header: { alignItems: "center", marginBottom: responsiveValue(18, 24) },
-  logo: { fontSize: responsiveValue(fontSizes.xl, 26), fontWeight: "800", color: "#fff", marginBottom: responsiveValue(6, 10), letterSpacing: -0.5 },
-  title: { fontSize: responsiveValue(fontSizes.lg, 22), color: "#fff", fontWeight: "700", marginBottom: responsiveValue(4, 6) },
-  subtitle: { fontSize: responsiveValue(fontSizes.md, 14), color: "#9aa0a6", textAlign: "center" },
+  logo: { fontSize: responsiveValue(fontSizes.xl, 26), fontWeight: "800", color: "#ff5b80", marginBottom: responsiveValue(6, 10), letterSpacing: -0.5 },
+  title: { fontSize: responsiveValue(fontSizes.lg, 22), color: "#1a1a1a", fontWeight: "700", marginBottom: responsiveValue(4, 6) },
+  subtitle: { fontSize: responsiveValue(fontSizes.md, 14), color: "#6b5b61", textAlign: "center" },
   form: { marginBottom: responsiveValue(10, 16) },
   inputBlock: { marginBottom: responsiveValue(12, 16) },
   inputRow: { flexDirection: "row", gap: 12 },
   rowItem: { flex: 1 },
-  label: { fontSize: responsiveValue(fontSizes.sm, 12), color: "#a6b1b8", fontWeight: "600", marginBottom: responsiveValue(6, 8) },
-  input: { backgroundColor: "#121417", borderWidth: 1, borderColor: "#1f2329", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: "#fff", fontSize: responsiveValue(fontSizes.md, 15) },
-  passwordRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#121417", borderWidth: 1, borderColor: "#1f2329", borderRadius: 12 },
-  passwordInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 12, color: "#fff", fontSize: responsiveValue(fontSizes.md, 15) },
+  label: { fontSize: responsiveValue(fontSizes.sm, 12), color: "#6b5b61", fontWeight: "600", marginBottom: responsiveValue(6, 8) },
+  input: { backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#f0cfd8", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: "#1a1a1a", fontSize: responsiveValue(fontSizes.md, 15) },
+  passwordRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#ffffff", borderWidth: 1, borderColor: "#f0cfd8", borderRadius: 12 },
+  passwordInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 12, color: "#1a1a1a", fontSize: responsiveValue(fontSizes.md, 15) },
   eyeButton: { paddingHorizontal: responsiveValue(12, 16), paddingVertical: 12 },
-  eyeIcon: { fontSize: responsiveValue(16, 18), color: "#bbb" },
-  button: { backgroundColor: "#fff", borderRadius: 12, paddingVertical: 14, alignItems: "center", width: '100%' },
-  buttonDisabled: { backgroundColor: "#2a2a2a" },
-  buttonText: { color: "#000", fontSize: responsiveValue(fontSizes.md, 16), fontWeight: "700" },
+  eyeIcon: { fontSize: responsiveValue(16, 18), color: "#6b5b61" },
+  button: { backgroundColor: "#ff5b80", borderRadius: 12, paddingVertical: 14, alignItems: "center", width: '100%' },
+  buttonDisabled: { backgroundColor: "#ffd0dc" },
+  buttonText: { color: "#fff", fontSize: responsiveValue(fontSizes.md, 16), fontWeight: "700" },
   footer: { flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: responsiveValue(12, 16) },
-  footerText: { color: "#9aa0a6", fontSize: responsiveValue(fontSizes.sm, 12) },
-  linkText: { color: "#fff", fontSize: responsiveValue(fontSizes.sm, 12), fontWeight: "700", marginLeft: 4 },
+  footerText: { color: "#6b5b61", fontSize: responsiveValue(fontSizes.sm, 12) },
+  linkText: { color: "#ff5b80", fontSize: responsiveValue(fontSizes.sm, 12), fontWeight: "700", marginLeft: 4 },
 });

@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator, Alert, ViewToken, LayoutAnimation, Platform, UIManager, Dimensions, ScrollView } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, UIManager, Dimensions, ScrollView, Animated, Easing } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { supabase } from "@/lib/supabase";
@@ -40,8 +40,8 @@ export default function HomeScreen() {
   const [profiles, setProfiles] = React.useState<Profile[]>([]);
   const [myId, setMyId] = React.useState<string>('');
   const [myGender, setMyGender] = React.useState<Profile['gender']>(null);
-  const [currentIndex, setCurrentIndex] = React.useState(0);
   const [actionLoading, setActionLoading] = React.useState<null | 'pass' | 'like'>(null);
+  const [transitionLoading, setTransitionLoading] = React.useState(false);
   // Enable LayoutAnimation on Android
   React.useEffect(() => {
     if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -83,14 +83,7 @@ export default function HomeScreen() {
       likeBtnBorder: '#2a1a22',
     } as const;
   }, [resolvedThemeMode]);
-  const viewabilityConfig = React.useRef({ itemVisiblePercentThreshold: 60 }).current;
-  const onViewableItemsChanged = React.useRef(({ viewableItems }: { viewableItems: Array<ViewToken>; changed: Array<ViewToken> }) => {
-    if (viewableItems && viewableItems.length > 0) {
-      const first = viewableItems[0];
-      const idx = first.index != null ? first.index : 0;
-      setCurrentIndex(idx);
-    }
-  }).current;
+  
   // Read-only preferences loaded from AsyncStorage; editing happens in Profile screen
   const [ageMin, setAgeMin] = React.useState<number>(18);
   const [ageMax, setAgeMax] = React.useState<number>(99);
@@ -142,6 +135,52 @@ export default function HomeScreen() {
 
   // Do not persist filters here; editing is moved to Profile
 
+  // Slide animation state
+  const translateCurrent = React.useRef(new Animated.Value(0)).current;
+  const translateNext = React.useRef(new Animated.Value(screenWidth)).current;
+  const scaleCurrent = React.useRef(new Animated.Value(1)).current;
+  const scaleNext = React.useRef(new Animated.Value(1.03)).current;
+  const opacityCurrent = React.useRef(new Animated.Value(1)).current;
+  const opacityNext = React.useRef(new Animated.Value(0.9)).current;
+
+  function runTransition(direction: 'left' | 'right', hasNext: boolean, onDone: () => void) {
+    const ease = Easing.bezier(0.22, 1, 0.36, 1); // smooth ease-out
+    if (hasNext) {
+      translateNext.setValue(direction === 'left' ? screenWidth : -screenWidth);
+      scaleNext.setValue(1.03);
+      opacityNext.setValue(0.9);
+      scaleCurrent.setValue(1);
+      opacityCurrent.setValue(1);
+      Animated.parallel([
+        Animated.timing(translateCurrent, { toValue: direction === 'left' ? -screenWidth : screenWidth, duration: 450, easing: ease, useNativeDriver: true }),
+        Animated.timing(translateNext, { toValue: 0, duration: 450, easing: ease, useNativeDriver: true }),
+        Animated.timing(scaleCurrent, { toValue: 0.97, duration: 450, easing: ease, useNativeDriver: true }),
+        Animated.timing(scaleNext, { toValue: 1, duration: 450, easing: ease, useNativeDriver: true }),
+        Animated.timing(opacityCurrent, { toValue: 0.85, duration: 450, easing: ease, useNativeDriver: true }),
+        Animated.timing(opacityNext, { toValue: 1, duration: 450, easing: ease, useNativeDriver: true }),
+      ]).start(() => {
+        translateCurrent.setValue(0);
+        translateNext.setValue(screenWidth);
+        scaleCurrent.setValue(1);
+        scaleNext.setValue(1.03);
+        opacityCurrent.setValue(1);
+        opacityNext.setValue(0.9);
+        onDone();
+      });
+    } else {
+      Animated.parallel([
+        Animated.timing(translateCurrent, { toValue: direction === 'left' ? -screenWidth : screenWidth, duration: 450, easing: ease, useNativeDriver: true }),
+        Animated.timing(scaleCurrent, { toValue: 0.97, duration: 450, easing: ease, useNativeDriver: true }),
+        Animated.timing(opacityCurrent, { toValue: 0.85, duration: 450, easing: ease, useNativeDriver: true }),
+      ]).start(() => {
+        translateCurrent.setValue(0);
+        scaleCurrent.setValue(1);
+        opacityCurrent.setValue(1);
+        onDone();
+      });
+    }
+  }
+
   const handleLike = async (likedId: string) => {
     try {
       if (!myId) {
@@ -149,7 +188,6 @@ export default function HomeScreen() {
         return;
       }
       setActionLoading('like');
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       // If already liked, go to Matches directly
       const { data: existing } = await supabase
         .from('likes')
@@ -167,7 +205,14 @@ export default function HomeScreen() {
         Alert.alert('Could not like', error.message);
         return;
       }
-      setProfiles(prev => prev.filter(p => p.id !== likedId));
+      // Advance with slide animation (like -> slide right, next from left)
+      const hasNext = filtered.length > 1;
+      setTransitionLoading(true);
+      runTransition('right', hasNext, () => {
+        setProfiles(prev => prev.filter(p => p.id !== likedId));
+        setActionLoading(null);
+        setTimeout(() => setTransitionLoading(false), 1000);
+      });
       // Optional: Check mutual like to hint a match (actual match row may be created by backend)
       const { data: mutual } = await supabase
         .from('likes')
@@ -176,6 +221,7 @@ export default function HomeScreen() {
         .eq('liked_id', myId)
         .maybeSingle();
       if (mutual) {
+        setTransitionLoading(false);
         // Ensure a match row exists (order-invariant pair)
         try {
           const a = myId < likedId ? myId : likedId;
@@ -194,18 +240,22 @@ export default function HomeScreen() {
       }
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Something went wrong.');
-    } finally { setActionLoading(null); }
+      setActionLoading(null);
+    }
   };
 
   const handlePass = async (passedId: string) => {
     // Animate removal and remove locally. If you have a `passes` table, insert there too.
     try {
       setActionLoading('pass');
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setProfiles(prev => prev.filter(p => p.id !== passedId));
-    } finally {
-      setTimeout(() => setActionLoading(null), 250);
-    }
+      const hasNext = filtered.length > 1;
+      setTransitionLoading(true);
+      runTransition('left', hasNext, () => {
+        setProfiles(prev => prev.filter(p => p.id !== passedId));
+        setActionLoading(null);
+        setTimeout(() => setTransitionLoading(false), 1000);
+      });
+    } catch {}
   };
 
   const filtered = React.useMemo(() => {
@@ -261,7 +311,6 @@ export default function HomeScreen() {
       }
       const filteredList = (list as any[] | null)?.filter(p => p.id !== uid) || [];
       setProfiles(shuffleArray(filteredList as Profile[]));
-      setCurrentIndex(0);
     } catch (e) {
       console.error('[Home] start over error', e);
     } finally {
@@ -287,33 +336,60 @@ export default function HomeScreen() {
         </View>
       ) : (
         <>
-          <FlatList
-            data={filtered}
-            keyExtractor={(item) => item.id}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            decelerationRate="fast"
-            style={{ flex: 1 }}
-            renderItem={({ item }) => (
-              <View style={styles.fullScreenCard}>
-                <ScrollView 
+          <View style={styles.cardsContainer}>
+            {filtered[0] && (
+              <Animated.View style={[styles.animatedCard, { transform: [{ translateX: translateCurrent }, { scale: scaleCurrent }], opacity: opacityCurrent }]}>
+                <ScrollView
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingVertical: 8 }}
                 >
-                  <ProfileView userId={item.id} embedded />
+                  <ProfileView
+                    userId={filtered[0].id}
+                    embedded
+                    initialProfile={{
+                      id: filtered[0].id,
+                      name: filtered[0].name,
+                      bio: filtered[0].bio ?? null,
+                      gender: filtered[0].gender ?? null,
+                      date_of_birth: filtered[0].date_of_birth ?? null,
+                      location: filtered[0].location ?? null,
+                      religion: null,
+                    }}
+                    initialPhotos={(filtered[0].photos || []).map((p, idx) => ({ id: idx, image_url: p.image_url }))}
+                  />
                 </ScrollView>
-              </View>
+              </Animated.View>
             )}
-            onViewableItemsChanged={onViewableItemsChanged}
-            viewabilityConfig={viewabilityConfig}
-          />
+            {filtered[1] && (
+              <Animated.View style={[styles.animatedCard, { transform: [{ translateX: translateNext }, { scale: scaleNext }], opacity: opacityNext }]}>
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingVertical: 8 }}
+                >
+                  <ProfileView
+                    userId={filtered[1].id}
+                    embedded
+                    initialProfile={{
+                      id: filtered[1].id,
+                      name: filtered[1].name,
+                      bio: filtered[1].bio ?? null,
+                      gender: filtered[1].gender ?? null,
+                      date_of_birth: filtered[1].date_of_birth ?? null,
+                      location: filtered[1].location ?? null,
+                      religion: null,
+                    }}
+                    initialPhotos={(filtered[1].photos || []).map((p, idx) => ({ id: idx, image_url: p.image_url }))}
+                  />
+                </ScrollView>
+              </Animated.View>
+            )}
+          </View>
 
           {/* Floating actions fixed at bottom */}
           <View pointerEvents="box-none" style={[styles.floatingActions, { bottom: insets.bottom + 16 }]}>
             <View style={styles.actionsRow}>
               <TouchableOpacity
-                onPress={() => { if (actionLoading) return; const cur = filtered[currentIndex]; if (cur) handlePass(cur.id); }}
+                onPress={() => { if (actionLoading) return; const cur = filtered[0]; if (cur) handlePass(cur.id); }}
                 style={[
                   styles.fab,
                   { backgroundColor: theme.passBtnBg, borderColor: theme.passBtnBorder },
@@ -330,7 +406,7 @@ export default function HomeScreen() {
                 )}
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => { if (actionLoading) return; const cur = filtered[currentIndex]; if (cur) handleLike(cur.id); }}
+                onPress={() => { if (actionLoading) return; const cur = filtered[0]; if (cur) handleLike(cur.id); }}
                 style={[
                   styles.fab,
                   { backgroundColor: theme.likeBtnBg, borderColor: theme.likeBtnBorder },
@@ -348,6 +424,16 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Short loading overlay between profiles (1s) */}
+          {transitionLoading && (
+            <View style={styles.transitionOverlay}>
+              <View style={styles.transitionCard}>
+                <ActivityIndicator color={theme.accent} size="large" />
+                <Text style={[styles.transitionText, { color: theme.text }]}>Loading…</Text>
+              </View>
+            </View>
+          )}
         </>
       )}
     </SafeAreaView>
@@ -362,6 +448,19 @@ const styles = StyleSheet.create({
   fullScreenCard: { 
     width: screenWidth, 
     flex: 1,
+  },
+  cardsContainer: {
+    width: screenWidth,
+    flex: 1,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  animatedCard: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: screenWidth,
   },
   // The following styles were used by the old card body; we now rely on ProfileView's own layout.
   imageWrap: { position: 'relative' },
@@ -384,4 +483,7 @@ const styles = StyleSheet.create({
   actionsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   startOverBtn: { marginTop: 12, backgroundColor: '#1f1f1f', borderColor: '#333', borderWidth: 1, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
   startOverText: { color: '#fff', fontWeight: '800' },
+  transitionOverlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.25)' },
+  transitionCard: { paddingHorizontal: 20, paddingVertical: 16, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center' },
+  transitionText: { marginTop: 8, fontWeight: '700' },
 });

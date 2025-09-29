@@ -1,15 +1,18 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Image, Alert, ActivityIndicator, Animated, Pressable } from "react-native";
-import Slider from "@react-native-community/slider";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Image, Alert, ActivityIndicator, Animated, Pressable, Platform, Modal } from "react-native";
+// import Slider from "@react-native-community/slider";
 import { Picker } from "@react-native-picker/picker";
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useStore } from "@/store";
 import { supabase } from "@/lib/supabase";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as ImagePicker from 'expo-image-picker';
+import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 export default function ProfileEditScreen() {
-  const { currentUser, resolvedThemeMode } = useStore();
+  const { currentUser, resolvedThemeMode, updateProfile } = useStore();
   const theme = useMemo(() => {
     if (resolvedThemeMode === 'light') {
       return {
@@ -39,13 +42,20 @@ export default function ProfileEditScreen() {
   const [saving, setSaving] = React.useState(false);
   const [busyPhotoIds, setBusyPhotoIds] = React.useState<Set<number>>(new Set());
   const PHOTOS_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_PHOTOS_BUCKET || 'profile-photos';
-  const [prefGender, setPrefGender] = React.useState<'all' | 'male' | 'female' | 'non-binary' | 'other'>('all');
-  const [prefAgeMin, setPrefAgeMin] = React.useState(18);
-  const [prefAgeMax, setPrefAgeMax] = React.useState(99);
+  // Discovery preferences removed
+  // const [prefGender, setPrefGender] = React.useState<'all' | 'male' | 'female' | 'non-binary' | 'other'>('all');
+  // const [prefAgeMin, setPrefAgeMin] = React.useState(18);
+  // const [prefAgeMax, setPrefAgeMax] = React.useState(99);
   const [dobYear, setDobYear] = React.useState<string>('');
   const [dobMonth, setDobMonth] = React.useState<string>('');
   const [dobDay, setDobDay] = React.useState<string>('');
+  const [dobValue, setDobValue] = React.useState<Date | null>(null);
+  const [showDobPicker, setShowDobPicker] = React.useState(false);
   const [interestNames, setInterestNames] = React.useState<string[]>([]);
+  const [selectedInterestIds, setSelectedInterestIds] = React.useState<number[]>([]);
+  const [allInterests, setAllInterests] = React.useState<Array<{ id: number; name: string }>>([]);
+  const [loadingInterests, setLoadingInterests] = React.useState(false);
+  const [showInterestsDropdown, setShowInterestsDropdown] = React.useState(false);
 
   const load = React.useCallback(async () => {
     if (!currentUser?.id) return;
@@ -56,8 +66,11 @@ export default function ProfileEditScreen() {
     ]);
     setProfile((p as any) || null);
     setPhotos((ph as any[]) || []);
-    const names = ((ui as any[]) || []).map((r: any) => r?.interests?.name).filter((n: any) => typeof n === 'string');
+    const uiRows = ((ui as any[]) || []);
+    const names = uiRows.map((r: any) => r?.interests?.name).filter((n: any) => typeof n === 'string');
+    const ids = uiRows.map((r: any) => r?.interest_id).filter((n: any) => typeof n === 'number');
     setInterestNames(names);
+    setSelectedInterestIds(ids);
     const iso = (p as any)?.date_of_birth as string | null;
     if (iso) {
       const d = new Date(iso);
@@ -65,11 +78,69 @@ export default function ProfileEditScreen() {
         setDobYear(String(d.getFullYear()));
         setDobMonth(String(d.getMonth() + 1));
         setDobDay(String(d.getDate()));
+        setDobValue(d);
       }
+    } else {
+      setDobValue(null);
     }
   }, [currentUser?.id]);
 
   React.useEffect(() => { load(); }, [load]);
+
+  // Load catalog of interests
+  const loadAllInterests = React.useCallback(async () => {
+    try {
+      setLoadingInterests(true);
+      const { data, error } = await supabase.from('interests').select('id, name').order('name');
+      if (error) throw error;
+      setAllInterests((data as any[]) || []);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to load interests');
+    } finally {
+      setLoadingInterests(false);
+    }
+  }, []);
+
+  const toggleInterestsDropdown = async () => {
+    setShowInterestsDropdown((prev) => !prev);
+    if (!showInterestsDropdown && allInterests.length === 0) {
+      await loadAllInterests();
+    }
+  };
+
+  const toggleInterest = async (interest: { id: number; name: string }) => {
+    if (!currentUser?.id) return;
+    const exists = selectedInterestIds.includes(interest.id);
+    if (exists) {
+      // optimistic remove
+      setSelectedInterestIds((ids) => ids.filter((i) => i !== interest.id));
+      setInterestNames((names) => names.filter((n) => n !== interest.name));
+      const { error } = await supabase
+        .from('user_interests')
+        .delete()
+        .eq('user_id', currentUser.id)
+        .eq('interest_id', interest.id);
+      if (error) {
+        // revert
+        setSelectedInterestIds((ids) => [...ids, interest.id]);
+        setInterestNames((names) => [...names, interest.name]);
+        Alert.alert('Error', error.message);
+      }
+    } else {
+      // optimistic add
+      setSelectedInterestIds((ids) => [...ids, interest.id]);
+      setInterestNames((names) => [...names, interest.name].sort((a, b) => a.localeCompare(b)));
+      const { error } = await supabase
+        .from('user_interests')
+        .insert({ user_id: currentUser.id, interest_id: interest.id });
+      if (error) {
+        // revert
+        setSelectedInterestIds((ids) => ids.filter((i) => i !== interest.id));
+        setInterestNames((names) => names.filter((n) => n !== interest.name));
+        Alert.alert('Error', error.message);
+      }
+    }
+  };
 
   const saveProfile = async () => {
     if (!profile || !currentUser?.id) return;
@@ -83,6 +154,19 @@ export default function ProfileEditScreen() {
       location: profile.location ?? null,
       religion: profile.religion ?? null,
     };
+
+  // Reorder a photo within the local array (UI-only)
+  // (Shuffle removed; using drag-and-drop instead)
+
+  // On first load with photos, set first as main avatar once
+  const autoSetMainRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!autoSetMainRef.current && photos && photos.length > 0) {
+      autoSetMainRef.current = true;
+      const first = photos[0];
+      if (first?.image_url) updateProfile({ avatarUri: first.image_url }).catch(() => {});
+    }
+  }, [photos.length]);
     const { error } = await supabase.from('profiles').upsert(payload, { onConflict: 'id' });
     if (error) {
       Alert.alert('Error', error.message);
@@ -180,8 +264,22 @@ export default function ProfileEditScreen() {
     ]);
   };
 
+  // (Removed movePhoto/makeMain per request)
+
+
+  // Auto-set first image as main avatar once when photos load
+  const autoSetMainRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!autoSetMainRef.current && photos && photos.length > 0) {
+      autoSetMainRef.current = true;
+      const first = photos[0];
+      if (first?.image_url) updateProfile({ avatarUri: first.image_url }).catch(() => {});
+    }
+  }, [photos.length]);
+
   return (
-    <ScrollView style={[styles.container, { backgroundColor: theme.bg }]} contentContainerStyle={{ padding: 12, paddingBottom: 120 }}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ScrollView style={[styles.container, { backgroundColor: theme.bg }]} contentContainerStyle={{ padding: 12, paddingBottom: 120 }}>
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <Text style={[styles.cardTitle, { color: theme.text }]}>About</Text>
         <Text style={styles.label}>Religion</Text>
@@ -211,41 +309,111 @@ export default function ProfileEditScreen() {
           value={profile?.location ?? ''}
           onChangeText={(t) => setProfile((p: any) => ({ ...(p || {}), location: t }))}
         />
-        <Text style={styles.label}>Gender</Text>
-        <View style={styles.segmentRow}>
-          {(['male','female','non-binary','other'] as const).map(g => (
-            <TouchableOpacity key={g} style={[styles.segment, { backgroundColor: theme.segmentBg, borderColor: theme.segmentBorder }, profile?.gender === g && { backgroundColor: theme.segmentActiveBg, borderColor: theme.segmentActiveBorder }]} onPress={() => setProfile((p: any) => ({ ...(p || {}), gender: g }))}>
-              <Text style={[styles.segmentText, { color: theme.muted }, profile?.gender === g && { color: resolvedThemeMode === 'light' ? '#000' : '#cce6ff' }]}>{g}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* Gender section removed */}
         <Text style={styles.label}>Date of birth</Text>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <View style={{ flex: 1 }}>
-            <Picker selectedValue={dobDay} onValueChange={(v) => { setDobDay(String(v)); setProfile((p: any) => ({ ...(p || {}), date_of_birth: `${dobYear}-${String(dobMonth).padStart(2,'0')}-${String(v).padStart(2,'0')}`})); }} style={[styles.input, { color: theme.text, backgroundColor: theme.inputBg, borderColor: theme.inputBorder }] as any}>
-              <Picker.Item label="Day" value="" />
-              {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
-                <Picker.Item key={d} label={String(d)} value={String(d)} />
-              ))}
-            </Picker>
+        {Platform.OS === 'web' ? (
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flex: 1 }}>
+              <Picker selectedValue={dobDay} onValueChange={(v) => { setDobDay(String(v)); setProfile((p: any) => ({ ...(p || {}), date_of_birth: `${dobYear}-${String(dobMonth).padStart(2,'0')}-${String(v).padStart(2,'0')}`})); }} style={[styles.input, { color: theme.text, backgroundColor: theme.inputBg, borderColor: theme.inputBorder }] as any}>
+                <Picker.Item label="Day" value="" />
+                {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                  <Picker.Item key={d} label={String(d)} value={String(d)} />
+                ))}
+              </Picker>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Picker selectedValue={dobMonth} onValueChange={(v) => { setDobMonth(String(v)); setProfile((p: any) => ({ ...(p || {}), date_of_birth: `${dobYear}-${String(v).padStart(2,'0')}-${String(dobDay).padStart(2,'0')}`})); }} style={[styles.input, { color: theme.text, backgroundColor: theme.inputBg, borderColor: theme.inputBorder }] as any}>
+                <Picker.Item label="Month" value="" />
+                {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                  <Picker.Item key={m} label={String(m)} value={String(m)} />
+                ))}
+              </Picker>
+            </View>
+            <View style={{ flex: 1.3 }}>
+              <Picker selectedValue={dobYear} onValueChange={(v) => { setDobYear(String(v)); setProfile((p: any) => ({ ...(p || {}), date_of_birth: `${String(v)}-${String(dobMonth).padStart(2,'0')}-${String(dobDay).padStart(2,'0')}`})); }} style={[styles.input, { color: theme.text, backgroundColor: theme.inputBg, borderColor: theme.inputBorder }] as any}>
+                <Picker.Item label="Year" value="" />
+                {Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - 18 - i).map(y => (
+                  <Picker.Item key={y} label={String(y)} value={String(y)} />
+                ))}
+              </Picker>
+            </View>
           </View>
-          <View style={{ flex: 1 }}>
-            <Picker selectedValue={dobMonth} onValueChange={(v) => { setDobMonth(String(v)); setProfile((p: any) => ({ ...(p || {}), date_of_birth: `${dobYear}-${String(v).padStart(2,'0')}-${String(dobDay).padStart(2,'0')}`})); }} style={[styles.input, { color: theme.text, backgroundColor: theme.inputBg, borderColor: theme.inputBorder }] as any}>
-              <Picker.Item label="Month" value="" />
-              {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                <Picker.Item key={m} label={String(m)} value={String(m)} />
-              ))}
-            </Picker>
+        ) : (
+          <View>
+            <TouchableOpacity onPress={() => setShowDobPicker(true)} style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: theme.inputBg, borderColor: theme.inputBorder }]}>
+              <Text style={{ color: theme.text }}>
+                {dobValue ? `${String(dobValue.getFullYear())}-${String(dobValue.getMonth()+1).padStart(2,'0')}-${String(dobValue.getDate()).padStart(2,'0')}` : 'Select date'}
+              </Text>
+              <Ionicons name="calendar-outline" size={16} color={theme.placeholder} />
+            </TouchableOpacity>
+            {showDobPicker && (
+              Platform.OS === 'ios' ? (
+                <Modal transparent animationType="slide" onRequestClose={() => setShowDobPicker(false)}>
+                  <View style={styles.modalBackdrop}>
+                    <View style={[styles.modalSheet, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                      <View style={styles.modalHeader}>
+                        <TouchableOpacity onPress={() => setShowDobPicker(false)}>
+                          <Text style={[styles.modalHeaderBtn, { color: resolvedThemeMode === 'light' ? '#000' : '#cce6ff' }]}>Cancel</Text>
+                        </TouchableOpacity>
+                        <Text style={[styles.modalTitle, { color: theme.text }]}>Select date</Text>
+                        <TouchableOpacity onPress={() => setShowDobPicker(false)}>
+                          <Text style={[styles.modalHeaderBtn, { color: resolvedThemeMode === 'light' ? '#000' : '#cce6ff' }]}>Done</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <DateTimePicker
+                        testID="dobPicker"
+                        value={dobValue || new Date(2000, 0, 1)}
+                        mode="date"
+                        display={'spinner'}
+                        themeVariant={resolvedThemeMode === 'light' ? 'light' : 'dark'}
+                        textColor={resolvedThemeMode === 'light' ? '#000' : '#fff'}
+                        style={{ backgroundColor: resolvedThemeMode === 'light' ? '#fff' : '#000' }}
+                        maximumDate={new Date(new Date().getFullYear() - 18, new Date().getMonth(), new Date().getDate())}
+                        minimumDate={new Date(new Date().getFullYear() - 100, 0, 1)}
+                        onChange={(event: any, selected?: Date) => {
+                          if (!selected) return;
+                          setDobValue(selected);
+                          const y = selected.getFullYear();
+                          const m = selected.getMonth() + 1;
+                          const d = selected.getDate();
+                          setDobYear(String(y));
+                          setDobMonth(String(m));
+                          setDobDay(String(d));
+                          const iso = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                          setProfile((p: any) => ({ ...(p || {}), date_of_birth: iso }));
+                        }}
+                      />
+                    </View>
+                  </View>
+                </Modal>
+              ) : (
+                <DateTimePicker
+                  testID="dobPicker"
+                  value={dobValue || new Date(2000, 0, 1)}
+                  mode="date"
+                  display={'spinner'}
+                  maximumDate={new Date(new Date().getFullYear() - 18, new Date().getMonth(), new Date().getDate())}
+                  minimumDate={new Date(new Date().getFullYear() - 100, 0, 1)}
+                  onChange={(event: any, selected?: Date) => {
+                    const type = (event && event.type) || undefined;
+                    if (type === 'dismissed') { setShowDobPicker(false); return; }
+                    if (type === 'set') { setShowDobPicker(false); }
+                    if (!selected) return;
+                    setDobValue(selected);
+                    const y = selected.getFullYear();
+                    const m = selected.getMonth() + 1;
+                    const d = selected.getDate();
+                    setDobYear(String(y));
+                    setDobMonth(String(m));
+                    setDobDay(String(d));
+                    const iso = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                    setProfile((p: any) => ({ ...(p || {}), date_of_birth: iso }));
+                  }}
+                />
+              )
+            )}
           </View>
-          <View style={{ flex: 1.3 }}>
-            <Picker selectedValue={dobYear} onValueChange={(v) => { setDobYear(String(v)); setProfile((p: any) => ({ ...(p || {}), date_of_birth: `${String(v)}-${String(dobMonth).padStart(2,'0')}-${String(dobDay).padStart(2,'0')}`})); }} style={[styles.input, { color: theme.text, backgroundColor: theme.inputBg, borderColor: theme.inputBorder }] as any}>
-              <Picker.Item label="Year" value="" />
-              {Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - i).map(y => (
-                <Picker.Item key={y} label={String(y)} value={String(y)} />
-              ))}
-            </Picker>
-          </View>
-        </View>
+        )}
       </View>
 
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -262,34 +430,34 @@ export default function ProfileEditScreen() {
             ))}
           </View>
         )}
-        <TouchableOpacity style={[styles.btn, { marginTop: 10, alignSelf: 'flex-start', backgroundColor: theme.btnBg, borderWidth: 1, borderColor: theme.btnBorder }]} onPress={() => router.push('/(tabs)/interests' as any)}>
+        <TouchableOpacity style={[styles.btn, { marginTop: 10, alignSelf: 'flex-start', backgroundColor: theme.btnBg, borderWidth: 1, borderColor: theme.btnBorder }]} onPress={toggleInterestsDropdown}>
           <Ionicons name="add-outline" size={16} color={theme.btnText} />
-          <Text style={[styles.btnText, { color: theme.btnText }]}>Edit interests</Text>
+          <Text style={[styles.btnText, { color: theme.btnText }]}>{showInterestsDropdown ? 'Close interests' : 'Edit interests'}</Text>
         </TouchableOpacity>
+        {showInterestsDropdown && (
+          <View style={{ marginTop: 10, borderWidth: 1, borderColor: theme.border, borderRadius: 10, backgroundColor: theme.card }}>
+            {loadingInterests ? (
+              <View style={{ padding: 12, alignItems: 'center' }}>
+                <ActivityIndicator color={resolvedThemeMode === 'light' ? '#000' : '#fff'} />
+              </View>
+            ) : (
+              <View>
+                {allInterests.map((it) => {
+                  const selected = selectedInterestIds.includes(it.id);
+                  return (
+                    <TouchableOpacity key={it.id} onPress={() => toggleInterest(it)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
+                      <Text style={{ color: theme.text, fontWeight: '600' }}>{it.name}</Text>
+                      <Ionicons name={selected ? 'checkbox-outline' : 'square-outline'} size={18} color={selected ? theme.accent : theme.muted} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
       </View>
 
-      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <Text style={[styles.cardTitle, { color: theme.text }]}>Discovery preferences</Text>
-        <Text style={styles.label}>Show me</Text>
-        <View style={styles.segmentRow}>
-          {(['all','male','female','non-binary','other'] as const).map(g => (
-            <TouchableOpacity key={g} style={[styles.segment, { backgroundColor: theme.segmentBg, borderColor: theme.segmentBorder }, prefGender === g && { backgroundColor: theme.segmentActiveBg, borderColor: theme.segmentActiveBorder }]} onPress={() => setPrefGender(g)}>
-              <Text style={[styles.segmentText, { color: theme.muted }, prefGender === g && { color: resolvedThemeMode === 'light' ? '#000' : '#cce6ff' }]}>{g}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        <Text style={[styles.label, { marginTop: 8 }]}>Age range {prefAgeMin}-{prefAgeMax}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 6 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.mutedSmall, { color: theme.muted }]}>Min</Text>
-            <Slider minimumValue={18} maximumValue={prefAgeMax} step={1} value={prefAgeMin} onValueChange={setPrefAgeMin} minimumTrackTintColor={resolvedThemeMode === 'light' ? theme.accent : '#4da3ff'} maximumTrackTintColor={resolvedThemeMode === 'light' ? theme.border : '#333'} thumbTintColor={resolvedThemeMode === 'light' ? theme.accent : '#4da3ff'} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.mutedSmall, { color: theme.muted }]}>Max</Text>
-            <Slider minimumValue={prefAgeMin} maximumValue={99} step={1} value={prefAgeMax} onValueChange={setPrefAgeMax} minimumTrackTintColor={resolvedThemeMode === 'light' ? theme.accent : '#4da3ff'} maximumTrackTintColor={resolvedThemeMode === 'light' ? theme.border : '#333'} thumbTintColor={resolvedThemeMode === 'light' ? theme.accent : '#4da3ff'} />
-          </View>
-        </View>
-      </View>
+      {/* Discovery preferences removed */}
 
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <Text style={[styles.cardTitle, { color: theme.text }]}>Photos (exactly 4)</Text>
@@ -304,22 +472,44 @@ export default function ProfileEditScreen() {
             <Text style={[styles.btnText, { color: theme.btnText }]}>Camera</Text>
           </TouchableOpacity>
         </View>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 }}>
-          {photos.map((p) => (
-            <View key={p.id} style={{ width: '31%', aspectRatio: 1, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: theme.gridBorder, position: 'relative' }}>
-              <Image source={{ uri: p.image_url }} style={{ width: '100%', height: '100%' }} />
-              <TouchableOpacity style={styles.remove} onPress={() => deletePhoto(p.id)} disabled={busyPhotoIds.has(p.id)}>
-                {busyPhotoIds.has(p.id) ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800' }}>X</Text>}
-              </TouchableOpacity>
-            </View>
-          ))}
+        <View style={{ marginTop: 12 }}>
+          <DraggableFlatList
+            data={photos}
+            keyExtractor={(item) => String(item.id)}
+            numColumns={2}
+            activationDistance={12}
+            onDragEnd={({ data }) => {
+              setPhotos(data);
+              if (data[0]?.image_url) updateProfile({ avatarUri: data[0].image_url }).catch(() => {});
+            }}
+            containerStyle={{}}
+            contentContainerStyle={{}}
+            scrollEnabled={false}
+            renderItem={({ item, getIndex, drag, isActive }: RenderItemParams<{ id: number; image_url: string }>) => {
+              const idx = getIndex?.() ?? 0;
+              return (
+                <Pressable onLongPress={drag} disabled={isActive} style={{ flex: 1, margin: 6, aspectRatio: 1, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: theme.gridBorder, position: 'relative' }}>
+                  <Image source={{ uri: item.image_url }} style={{ width: '100%', height: '100%', opacity: isActive ? 0.9 : 1 }} />
+                  {idx === 0 && (
+                    <View style={{ position: 'absolute', top: 6, left: 6, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}>
+                      <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12 }}>MAIN</Text>
+                    </View>
+                  )}
+                  <TouchableOpacity style={styles.remove} onPress={() => deletePhoto(item.id)} disabled={busyPhotoIds.has(item.id)}>
+                    {busyPhotoIds.has(item.id) ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800' }}>X</Text>}
+                  </TouchableOpacity>
+                </Pressable>
+              );
+            }}
+          />
         </View>
       </View>
 
       <TouchableOpacity style={[styles.saveBtn, { backgroundColor: theme.saveBg }, saving && { opacity: 0.6 }]} onPress={saveProfile} disabled={saving}>
         <Text style={[styles.saveBtnText, { color: theme.saveText }]}>{saving ? 'Saving…' : 'Save'}</Text>
       </TouchableOpacity>
-    </ScrollView>
+      </ScrollView>
+    </GestureHandlerRootView>
   );
 }
 
@@ -342,6 +532,11 @@ const styles = StyleSheet.create({
   remove: { position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
   interestChip: { backgroundColor: '#1a1a1a', borderColor: '#2a2a2d', borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18, flexDirection: 'row', alignItems: 'center' },
   interestChipText: { color: '#ddd', fontWeight: '600' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalSheet: { borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, padding: 12 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 8 },
+  modalHeaderBtn: { fontWeight: '700' },
+  modalTitle: { fontWeight: '800' },
 });
 
 const RELIGIONS = [

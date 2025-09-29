@@ -36,9 +36,12 @@ type ProfileViewProps = {
   actions?: React.ReactNode; // overlay actions rendered on hero
   onLike?: () => void; // optional like handler to show per-photo like UI
   liking?: boolean; // optional loading state for like
+  initialProfile?: Profile | null;
+  initialPhotos?: Array<{ id?: number; image_url: string }>;
+  initialInterests?: string[];
 };
 
-export default function ProfileViewScreen({ userId, embedded, actions, onLike, liking }: ProfileViewProps) {
+export default function ProfileViewScreen({ userId, embedded, actions, onLike, liking, initialProfile, initialPhotos, initialInterests }: ProfileViewProps) {
   const { currentUser, resolvedThemeMode } = useStore();
   const theme = useMemo(() => {
     if (resolvedThemeMode === 'light') {
@@ -56,10 +59,11 @@ export default function ProfileViewScreen({ userId, embedded, actions, onLike, l
       likeBg: '#1a0f14', likeBorder: '#2a1a22', accent: '#ff5b80',
     } as const;
   }, [resolvedThemeMode]);
-  const [profile, setProfile] = React.useState<Profile | null>(null);
-  const [photos, setPhotos] = React.useState<Photo[]>([]);
-  const [interestNames, setInterestNames] = React.useState<string[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [profile, setProfile] = React.useState<Profile | null>(initialProfile ?? null);
+  const [photos, setPhotos] = React.useState<Photo[]>(() => (initialPhotos || []).map((p, idx) => ({ id: p.id ?? idx, image_url: p.image_url })));
+  const [interestNames, setInterestNames] = React.useState<string[]>(initialInterests ?? []);
+  const [loading, setLoading] = React.useState(!(initialProfile || (initialPhotos && initialPhotos.length)));
+  const [heroLoaded, setHeroLoaded] = React.useState(false);
 
   const load = React.useCallback(async () => {
     const targetId = userId || currentUser?.id;
@@ -77,7 +81,10 @@ export default function ProfileViewScreen({ userId, embedded, actions, onLike, l
     setLoading(false);
   }, [currentUser?.id, userId]);
 
-  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => {
+    if (initialProfile || (initialPhotos && initialPhotos.length)) return; // already have data; skip fetch
+    load();
+  }, [load, initialProfile, initialPhotos?.length]);
 
   const age = React.useMemo(() => {
     const iso = profile?.date_of_birth; if (!iso) return undefined; const d = new Date(iso); if (isNaN(d.getTime())) return undefined;
@@ -105,7 +112,7 @@ export default function ProfileViewScreen({ userId, embedded, actions, onLike, l
       {/* Hero */}
       <View style={[styles.heroWrap, { backgroundColor: theme.heroBg, borderColor: theme.border }]}> 
         {hero ? (
-          <Image source={{ uri: hero }} style={styles.heroImage} />
+          <Image source={{ uri: hero }} style={styles.heroImage} onLoadEnd={() => setHeroLoaded(true)} />
         ) : (
           <View style={[styles.heroImage, { alignItems: 'center', justifyContent: 'center' }]}> 
             {loading ? (
@@ -118,9 +125,13 @@ export default function ProfileViewScreen({ userId, embedded, actions, onLike, l
         <View style={styles.heroShade} />
         <View style={[styles.heroOverlay, actions ? { paddingRight: 72 } : null]}>
           <View style={[styles.badge, { backgroundColor: theme.badgeBg, borderColor: theme.badgeBorder }]}>
-            <Text style={[styles.badgeText, { color: resolvedThemeMode === 'light' ? theme.text : '#fff' }]}>{loading ? 'Loading…' : 'Profile'}</Text>
+            <Text style={[styles.badgeText, { color: resolvedThemeMode === 'light' ? theme.text : '#fff' }]}>Profile</Text>
           </View>
-          <Text style={[styles.heroName]} numberOfLines={1}>{(profile?.name || currentUser.name || 'User')}{age !== undefined ? `, ${age}` : ''}</Text>
+          {profile?.name ? (
+            <Text style={[styles.heroName]} numberOfLines={1}>{profile.name}{age !== undefined ? `, ${age}` : ''}</Text>
+          ) : (
+            <View style={styles.nameSkeleton} />
+          )}
         </View>
         {actions ? <View pointerEvents="box-none" style={styles.actionsOverlay}>{actions}</View> : null}
       </View>
@@ -129,11 +140,19 @@ export default function ProfileViewScreen({ userId, embedded, actions, onLike, l
       <View style={[styles.cardRounded, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <Text style={[styles.cardTitle, { color: theme.text }]}>About me</Text>
         {chips.length === 0 ? (
-          <Text style={[styles.mutedSmall, { color: theme.muted }]}>Add more details to your profile.</Text>
+          loading ? (
+            <View style={styles.skeletonRow}>
+              <View style={[styles.chip, styles.skeletonChip]} />
+              <View style={[styles.chip, styles.skeletonChip]} />
+              <View style={[styles.chip, styles.skeletonChip]} />
+            </View>
+          ) : (
+            <Text style={[styles.mutedSmall, { color: theme.muted }]}>Add more details to your profile.</Text>
+          )
         ) : (
           <View style={styles.chipsWrap}>
             {chips.map((c, idx) => (
-              <View key={`${c.label}-${idx}`} style={[styles.chip, { backgroundColor: theme.chipBg, borderColor: theme.chipBorder }]}>
+              <View key={`${c.label}-${idx}`} style={[styles.chip, { backgroundColor: theme.chipBg, borderColor: theme.chipBorder }]}> 
                 {c.icon ? <Ionicons name={c.icon as any} size={14} color={resolvedThemeMode === 'light' ? '#8a7c83' : '#bbb'} style={{ marginRight: 6 }} /> : null}
                 <Text style={[styles.chipText, { color: resolvedThemeMode === 'light' ? theme.chipText : '#ddd' }]}>{c.label}</Text>
               </View>
@@ -250,4 +269,8 @@ const styles = StyleSheet.create({
   photoImage: { width: '100%', aspectRatio: 3/4 },
   photoActionsOverlay: { position: 'absolute', left: 12, right: 12, bottom: 12, flexDirection: 'row', alignItems: 'center' },
   likeFab: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a0f14', borderWidth: 1, borderColor: '#2a1a22' },
+  // Skeletons
+  nameSkeleton: { width: 160, height: 28, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.2)' },
+  skeletonRow: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  skeletonChip: { backgroundColor: 'rgba(255,255,255,0.12)', borderColor: 'rgba(255,255,255,0.12)', width: 80 },
 });

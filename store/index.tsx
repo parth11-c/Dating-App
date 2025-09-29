@@ -45,7 +45,9 @@ export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
       let ensured = profile as any | null;
       if (!ensured) {
         const initialName = (session.user.user_metadata as any)?.name || session.user.email || 'User';
-        await supabase.from('profiles').upsert({ id: uid, name: initialName }, { onConflict: 'id' });
+        // Do not auto-create an incomplete profile row here. Some schemas enforce NOT NULL constraints
+        // (e.g., pronoun, preferred_gender), which causes a 400 on web upserts.
+        // We'll surface a local placeholder and let onboarding create the row with full data.
         ensured = { id: uid, name: initialName } as any;
       }
       // If avatar is missing, try to use the first uploaded photo as a fallback and persist it
@@ -60,7 +62,15 @@ export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
             .limit(1);
           const first = (ph as any[] | null)?.[0]?.image_url as string | undefined;
           if (first) {
-            await supabase.from('profiles').upsert({ id: uid, avatar_url: first }, { onConflict: 'id' });
+            // Only update if a profile row exists; avoid creating an incomplete row
+            const { data: exists } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('id', uid)
+              .maybeSingle();
+            if (exists) {
+              await supabase.from('profiles').update({ avatar_url: first }).eq('id', uid);
+            }
             avatarUrl = first;
           }
         } catch {}
@@ -146,8 +156,20 @@ export const StoreProvider = ({ children }: { children: React.ReactNode }) => {
       if (typeof input.name === 'string') payload.name = input.name;
       if (typeof avatar_url !== 'undefined') payload.avatar_url = avatar_url;
       if (Object.keys(payload).length === 0) return { ok: true };
-      // Use upsert so that if the profile row doesn't exist yet, it will be created
-      const { error } = await supabase.from('profiles').upsert({ id: uid, ...payload }, { onConflict: 'id' });
+      // Only update existing profile rows; skip creating incomplete rows here.
+      const { data: exists } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', uid)
+        .maybeSingle();
+      let error = null as any;
+      if (exists) {
+        const res = await supabase.from('profiles').update(payload).eq('id', uid);
+        error = res.error;
+      } else {
+        // If no row yet, onboarding will create it with complete data. Treat as success.
+        error = null;
+      }
       if (error) return { ok: false, reason: error.message };
       // Refresh current user in state
       setState((prev) => ({
