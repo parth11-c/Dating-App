@@ -81,12 +81,12 @@ export default function TabsLayout() {
     try {
       if (!currentUser?.id) return; // not logged in yet
       const [{ data: p }, { data: ph }] = await Promise.all([
-        supabase.from('profiles').select('id, name, gender, pronoun, preferred_gender, date_of_birth').eq('id', currentUser.id).maybeSingle(),
+        supabase.from('profiles').select('id, name, gender, pronoun, date_of_birth').eq('id', currentUser.id).maybeSingle(),
         supabase.from('photos').select('id').eq('user_id', currentUser.id)
       ]);
       const profile = p as any;
       const photos = (ph as any[]) || [];
-      const complete = !!(profile && profile.name && profile.gender && profile.pronoun && profile.date_of_birth && profile.preferred_gender && photos.length === 4);
+      const complete = !!(profile && profile.name && profile.gender && profile.pronoun && profile.date_of_birth && photos.length === 4);
       setProfileComplete(complete);
       if (!complete && !pathname?.startsWith('/onboarding')) {
         // block and redirect to the next missing step
@@ -96,12 +96,10 @@ export default function TabsLayout() {
           ? '/onboarding/gender'
           : !profile?.date_of_birth
           ? '/onboarding/dob'
-          : !profile?.preferred_gender
-          ? '/onboarding/preference'
           : photos.length !== 4
           ? '/onboarding/photos'
           : '/onboarding/name';
-        Alert.alert('Complete your profile', 'Please complete onboarding first: Name → Pronoun & Gender → DOB → Preference → Details → 4 Photos.', [
+        Alert.alert('Complete your profile', 'Please complete onboarding first: Name → Pronoun & Gender → DOB → Details → 4 Photos.', [
           { text: 'OK', onPress: () => router.replace(nextPath as any) }
         ]);
         router.replace(nextPath as any);
@@ -150,6 +148,11 @@ export default function TabsLayout() {
         options={{
           title: "Home",
           tabBarIcon: ({ color, size }: { color: string; size: number }) => <FontAwesome name="home" color={color} size={size} />,
+          headerRight: () => (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <HeaderToggle />
+            </View>
+          ),
         }}
         listeners={{
           tabPress: (e: any) => {

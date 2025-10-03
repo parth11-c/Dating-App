@@ -49,6 +49,7 @@ export default function ProfileScreen() {
   const PHOTOS_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_PHOTOS_BUCKET || 'profile-photos';
   const params = useLocalSearchParams<{ edit?: string }>();
   const [editMode, setEditMode] = React.useState(false);
+  const [changingAvatar, setChangingAvatar] = React.useState(false);
   // Discovery preferences
   const [prefGender, setPrefGender] = React.useState<'all' | 'male' | 'female' | 'non-binary' | 'other'>('all');
   const [prefAgeMin, setPrefAgeMin] = React.useState(18);
@@ -280,6 +281,18 @@ export default function ProfileScreen() {
     }
   }, [params?.edit]);
 
+  // Realtime: subscribe to changes for the current user
+  React.useEffect(() => {
+    if (!currentUser?.id) return;
+    const channel = supabase
+      .channel(`realtime-profile-${currentUser.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${currentUser.id}` }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'photos', filter: `user_id=eq.${currentUser.id}` }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_interests', filter: `user_id=eq.${currentUser.id}` }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUser?.id, load]);
+
   // Sync DOB pickers into ISO date on profile
   React.useEffect(() => {
     if (dobYear && dobMonth && dobDay) {
@@ -399,6 +412,66 @@ export default function ProfileScreen() {
 
   const hero = profile?.avatar_url || photos[0]?.image_url;
 
+  const replaceAvatarWithUri = async (uri: string) => {
+    if (!currentUser?.id) return;
+    setChangingAvatar(true);
+    const prevHero = hero;
+    try {
+      const res = await fetch(uri);
+      const arrayBuffer = await res.arrayBuffer();
+      const lower = uri.toLowerCase();
+      let ext = 'jpg';
+      if (lower.includes('.png')) ext = 'png';
+      else if (lower.includes('.webp')) ext = 'webp';
+      else if (lower.includes('.heic')) ext = 'heic';
+      else if (lower.includes('.heif')) ext = 'heif';
+      const contentType =
+        ext === 'png' ? 'image/png' :
+        ext === 'webp' ? 'image/webp' :
+        ext === 'heic' ? 'image/heic' :
+        ext === 'heif' ? 'image/heif' :
+        'image/jpeg';
+      const filename = `${currentUser.id}/${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+      const { error: upErr } = await supabase.storage.from(PHOTOS_BUCKET).upload(filename, arrayBuffer, { contentType, upsert: false });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(filename);
+      const publicUrl = data.publicUrl;
+      // Insert into photos for consistency
+      const { error: insErr } = await supabase.from('photos').insert({ user_id: currentUser.id, image_url: publicUrl });
+      if (insErr) throw insErr;
+      // Update avatar via store only (do not create profile row if missing)
+      try { await updateProfile({ avatarUri: publicUrl }); } catch {}
+      // Remove previous hero best-effort
+      if (prevHero && typeof prevHero === 'string') {
+        const storagePath = storagePathFromPublicUrl(prevHero, PHOTOS_BUCKET);
+        if (storagePath) {
+          const { error: rmErr } = await supabase.storage.from(PHOTOS_BUCKET).remove([storagePath]);
+          if (rmErr && !String(rmErr.message || rmErr).toLowerCase().includes('not found')) {
+            console.warn('Storage remove failed:', rmErr);
+          }
+        }
+        await supabase.from('photos').delete().eq('user_id', currentUser.id).eq('image_url', prevHero);
+      }
+      await load();
+    } catch (e: any) {
+      Alert.alert('Avatar update failed', e?.message || 'Please try again.');
+    } finally {
+      setChangingAvatar(false);
+    }
+  };
+
+  const pickNewAvatar = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission needed', 'We need photo library permission to pick an image.'); return; }
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1,1], quality: 0.9 });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      await replaceAvatarWithUri(result.assets[0].uri);
+    } catch (e: any) {
+      Alert.alert('Avatar update failed', e?.message || 'Please try again.');
+    }
+  };
+
   // Auto-set avatar once if missing, using first photo
   const autoAvatarSetRef = React.useRef(false);
   React.useEffect(() => {
@@ -425,11 +498,18 @@ export default function ProfileScreen() {
       <View style={[styles.topHeader, { borderBottomColor: theme.border }]}>
         <View style={styles.centerHeader}>
           <View style={styles.centerPicWrap}>
-            {hero ? (
-              <Image source={{ uri: hero }} style={styles.centerPic} />
-            ) : (
-              <View style={[styles.centerPic, { backgroundColor: theme.avatarBg, alignItems: 'center', justifyContent: 'center' }]}> 
-                <Ionicons name="person" size={48} color={theme.sub} />
+            <TouchableOpacity activeOpacity={0.85} onPress={pickNewAvatar}>
+              {hero ? (
+                <Image source={{ uri: hero }} style={styles.centerPic} />
+              ) : (
+                <View style={[styles.centerPic, { backgroundColor: theme.avatarBg, alignItems: 'center', justifyContent: 'center' }]}> 
+                  <Ionicons name="person" size={48} color={theme.sub} />
+                </View>
+              )}
+            </TouchableOpacity>
+            {changingAvatar && (
+              <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+                <ActivityIndicator color={theme.accent} />
               </View>
             )}
           </View>

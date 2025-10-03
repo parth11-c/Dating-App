@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '@/lib/supabase';
 import { useStore } from '@/store';
 
@@ -164,6 +165,13 @@ export default function ChatTab() {
 
   React.useEffect(() => { load(); }, [load]);
 
+  // Also refresh when the tab/screen becomes focused
+  useFocusEffect(
+    React.useCallback(() => {
+      load();
+    }, [load])
+  );
+
   // Realtime: refresh list when matches change involving me
   React.useEffect(() => {
     if (!myId) return;
@@ -251,7 +259,7 @@ export default function ChatTab() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top','left','right','bottom']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['left','right','bottom']}>
       {loading ? (
         <View style={[styles.center, { padding: 16 }]}> 
           <ActivityIndicator color={resolvedThemeMode === 'light' ? theme.accent : '#fff'} />

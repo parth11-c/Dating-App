@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { useOnboarding } from "@/context/onboarding";
+import { useOnboarding } from "./_context";
 
 export default function OnboardingName() {
   const { draft, update } = useOnboarding();
@@ -32,7 +32,7 @@ export default function OnboardingName() {
           <View style={{ height: 16 }} />
           <TextInput
             placeholder="Enter your name"
-            placeholderTextColor="#6b7280"
+            placeholderTextColor="#6b5b61"
             value={name}
             onChangeText={setName}
             style={styles.input}
@@ -62,21 +62,21 @@ export default function OnboardingName() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a" },
+  container: { flex: 1, backgroundColor: "#FFF5F8" },
   body: { padding: 16, paddingBottom: 40 },
-  title: { color: "#fff", fontSize: 22, fontWeight: "800" },
-  subtitle: { color: "#9aa0a6", marginTop: 6 },
-  section: { color: "#c7c7c7", fontWeight: "800", marginBottom: 8, marginTop: 6 },
-  input: { backgroundColor: "#0f0f10", borderColor: "#222", borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: "#fff" },
+  title: { color: "#1a1a1a", fontSize: 22, fontWeight: "800" },
+  subtitle: { color: "#6b5b61", marginTop: 6 },
+  section: { color: "#6b5b61", fontWeight: "800", marginBottom: 8, marginTop: 6 },
+  input: { backgroundColor: "#ffffff", borderColor: "#f0cfd8", borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: "#1a1a1a" },
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  chip: { backgroundColor: '#0f0f10', borderColor: '#222', borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 18 },
-  chipActive: { borderColor: '#fff', backgroundColor: '#141416' },
-  chipText: { color: '#c7c7c7', fontWeight: '700' },
-  chipTextActive: { color: '#fff' },
+  chip: { backgroundColor: '#ffffff', borderColor: '#f0cfd8', borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 18 },
+  chipActive: { borderColor: '#ff5b80', backgroundColor: '#ffe9f0' },
+  chipText: { color: '#6b5b61', fontWeight: '700' },
+  chipTextActive: { color: '#1a1a1a' },
   footer: { padding: 16 },
-  cta: { backgroundColor: "#fff", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
+  cta: { backgroundColor: "#ff5b80", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   ctaDisabled: { opacity: 0.6 },
-  ctaText: { color: "#000", fontSize: 16, fontWeight: "800" },
+  ctaText: { color: "#ffffff", fontSize: 16, fontWeight: "800" },
 });
 
 const RELIGIONS = [

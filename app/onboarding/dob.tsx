@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { useOnboarding } from "@/context/onboarding";
+import { useOnboarding } from "./_context";
 
 function isValidDate(y: number, m: number, d: number) {
   const dt = new Date(y, m - 1, d);
@@ -59,7 +59,7 @@ export default function OnboardingDob() {
                 onChangeText={(t) => setDay(t.replace(/[^0-9]/g, '').slice(0, 2))}
                 keyboardType="number-pad"
                 placeholder="DD"
-                placeholderTextColor="#6b7280"
+                placeholderTextColor="#6b5b61"
                 style={styles.input}
                 maxLength={2}
               />
@@ -72,7 +72,7 @@ export default function OnboardingDob() {
                 onChangeText={(t) => setMonth(t.replace(/[^0-9]/g, '').slice(0, 2))}
                 keyboardType="number-pad"
                 placeholder="MM"
-                placeholderTextColor="#6b7280"
+                placeholderTextColor="#6b5b61"
                 style={styles.input}
                 maxLength={2}
               />
@@ -85,7 +85,7 @@ export default function OnboardingDob() {
                 onChangeText={(t) => setYear(t.replace(/[^0-9]/g, '').slice(0, 4))}
                 keyboardType="number-pad"
                 placeholder="YYYY"
-                placeholderTextColor="#6b7280"
+                placeholderTextColor="#6b5b61"
                 style={styles.input}
                 maxLength={4}
               />
@@ -103,15 +103,15 @@ export default function OnboardingDob() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a" },
+  container: { flex: 1, backgroundColor: "#FFF5F8" },
   body: { padding: 16, paddingBottom: 40 },
-  title: { color: "#fff", fontSize: 22, fontWeight: "800" },
-  subtitle: { color: "#9aa0a6", marginTop: 6 },
+  title: { color: "#1a1a1a", fontSize: 22, fontWeight: "800" },
+  subtitle: { color: "#6b5b61", marginTop: 6 },
   row: { flexDirection: 'row' },
   field: {},
-  label: { color: '#c7c7c7', marginBottom: 8, fontWeight: '700' },
-  input: { backgroundColor: "#0f0f10", borderColor: "#222", borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: "#fff" },
+  label: { color: '#6b5b61', marginBottom: 8, fontWeight: '700' },
+  input: { backgroundColor: "#ffffff", borderColor: "#f0cfd8", borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: "#1a1a1a" },
   footer: { padding: 16 },
-  cta: { backgroundColor: "#fff", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
-  ctaText: { color: "#000", fontSize: 16, fontWeight: "800" },
+  cta: { backgroundColor: "#ff5b80", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
+  ctaText: { color: "#ffffff", fontSize: 16, fontWeight: "800" },
 });

@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { useOnboarding } from "@/context/onboarding";
+import { useOnboarding } from "./_context";
 
 const OPTIONS = [
   { key: "female", label: "Women" },
@@ -55,16 +55,16 @@ export default function OnboardingPreference() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a" },
+  container: { flex: 1, backgroundColor: "#FFF5F8" },
   body: { flex: 1, padding: 16 },
-  title: { color: "#fff", fontSize: 22, fontWeight: "800" },
-  subtitle: { color: "#9aa0a6", marginTop: 6 },
-  option: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, borderColor: "#222", marginBottom: 12, backgroundColor: "#0f0f10" },
-  optionActive: { borderColor: "#fff", backgroundColor: "#141416" },
-  optionText: { color: "#c7c7c7", fontSize: 16, fontWeight: "700" },
-  optionTextActive: { color: "#fff" },
+  title: { color: "#1a1a1a", fontSize: 22, fontWeight: "800" },
+  subtitle: { color: "#6b5b61", marginTop: 6 },
+  option: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, borderColor: "#f0cfd8", marginBottom: 12, backgroundColor: "#ffffff" },
+  optionActive: { borderColor: "#ff5b80", backgroundColor: "#ffe9f0" },
+  optionText: { color: "#6b5b61", fontSize: 16, fontWeight: "700" },
+  optionTextActive: { color: "#1a1a1a" },
   footer: { padding: 16 },
-  cta: { backgroundColor: "#fff", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
+  cta: { backgroundColor: "#ff5b80", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   ctaDisabled: { opacity: 0.6 },
-  ctaText: { color: "#000", fontSize: 16, fontWeight: "800" },
+  ctaText: { color: "#ffffff", fontSize: 16, fontWeight: "800" },
 });

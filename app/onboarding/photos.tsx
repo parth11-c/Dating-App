@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, ActivityIndicat
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import * as ImagePicker from 'expo-image-picker';
-import { useOnboarding } from "@/context/onboarding";
+import { useOnboarding } from "./_context";
 import { useStore } from "@/store";
 import { supabase } from "@/lib/supabase";
 
@@ -14,6 +14,23 @@ export default function OnboardingPhotos() {
   const { currentUser } = useStore();
   const [saving, setSaving] = React.useState(false);
   const photos = draft.photos || [];
+
+  // Strict light theme
+  const theme = {
+    bg: '#FFF5F8',
+    text: '#1a1a1a',
+    sub: '#6b5b61',
+    btnBg: '#ffffff',
+    btnText: '#1a1a1a',
+    btnBorder: '#f0cfd8',
+    gridItemBg: '#ffffff',
+    gridItemBorder: '#f0cfd8',
+    removeBg: 'rgba(255,255,255,0.9)',
+    removeText: '#1a1a1a',
+    removeBorder: 'rgba(26,26,26,0.2)',
+    ctaBg: '#ff5b80',
+    ctaText: '#ffffff',
+  } as const;
 
   const pickFromLibrary = async () => {
     try {
@@ -140,14 +157,16 @@ export default function OnboardingPhotos() {
         if (toRemove.length) {
           const { error: rmErr } = await supabase.storage.from(PHOTOS_BUCKET).remove(toRemove);
           if (rmErr && !String((rmErr as any).message || rmErr).toLowerCase().includes('not found')) {
-            console.warn('Failed to remove some storage objects during onboarding reset:', rmErr);
+            // Silently continue if storage objects don't exist
           }
         }
       }
       await supabase.from('photos').delete().eq('user_id', currentUser.id);
 
-      // 3) Upload each photo and insert row
-      for (const p of photos) {
+      // 3) Upload each photo and insert row with explicit position to enforce ordering (main = position 0)
+      let firstPublicUrl: string | null = null;
+      for (let i = 0; i < photos.length; i++) {
+        const p = photos[i];
         const res = await fetch(p.uri);
         const arrayBuffer = await res.arrayBuffer();
         const lower = p.uri.toLowerCase();
@@ -174,7 +193,10 @@ export default function OnboardingPhotos() {
         }
         const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(filename);
         const publicUrl = data.publicUrl;
-        const { error: insErr } = await supabase.from('photos').insert({ user_id: currentUser.id, image_url: publicUrl });
+        if (i === 0) firstPublicUrl = publicUrl;
+        const insertPayload: any = { user_id: currentUser.id, image_url: publicUrl };
+        try { insertPayload.position = i; } catch {}
+        const { error: insErr } = await supabase.from('photos').insert(insertPayload);
         if (insErr) throw insErr;
       }
 
@@ -189,37 +211,37 @@ export default function OnboardingPhotos() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
       <View style={styles.body}>
-        <Text style={styles.title}>Add 4 photos</Text>
-        <Text style={styles.subtitle}>Pick or take exactly 4 photos to complete your profile.</Text>
+        <Text style={[styles.title, { color: theme.text }]}>Add 4 photos</Text>
+        <Text style={[styles.subtitle, { color: theme.sub }]}>Pick or take exactly 4 photos to complete your profile.</Text>
         <View style={{ height: 12 }} />
         <View style={{ flexDirection: 'row', gap: 12 }}>
-          <TouchableOpacity style={[styles.btn, photos.length >= 4 && styles.btnDisabled]} onPress={pickFromLibrary} disabled={photos.length >= 4 || saving}>
-            <Text style={styles.btnText}>Pick from library</Text>
+          <TouchableOpacity style={[styles.btn, { backgroundColor: theme.btnBg, borderColor: theme.btnBorder }, photos.length >= 4 && styles.btnDisabled]} onPress={pickFromLibrary} disabled={photos.length >= 4 || saving}>
+            <Text style={[styles.btnText, { color: theme.btnText }]}>Pick from library</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.btn, photos.length >= 4 && styles.btnDisabled]} onPress={takePhoto} disabled={photos.length >= 4 || saving}>
-            <Text style={styles.btnText}>Take a photo</Text>
+          <TouchableOpacity style={[styles.btn, { backgroundColor: theme.btnBg, borderColor: theme.btnBorder }, photos.length >= 4 && styles.btnDisabled]} onPress={takePhoto} disabled={photos.length >= 4 || saving}>
+            <Text style={[styles.btnText, { color: theme.btnText }]}>Take a photo</Text>
           </TouchableOpacity>
         </View>
 
         <ScrollView contentContainerStyle={{ paddingVertical: 12 }}>
           <View style={styles.grid}> 
             {photos.map((p) => (
-              <View key={p.uri} style={styles.gridItem}>
+              <View key={p.uri} style={[styles.gridItem, { backgroundColor: theme.gridItemBg, borderColor: theme.gridItemBorder }]}>
                 <Image source={{ uri: p.uri }} style={{ width: '100%', height: '100%' }} />
-                <TouchableOpacity style={styles.remove} onPress={() => removePhoto(p.uri)} disabled={saving}>
-                  <Text style={{ color: '#fff', fontWeight: '800' }}>X</Text>
+                <TouchableOpacity style={[styles.remove, { backgroundColor: theme.removeBg, borderColor: theme.removeBorder }]} onPress={() => removePhoto(p.uri)} disabled={saving}>
+                  <Text style={{ color: theme.removeText, fontWeight: '800' }}>X</Text>
                 </TouchableOpacity>
               </View>
             ))}
           </View>
-          <Text style={styles.mutedSmall}>Photos added: {photos.length}/4</Text>
+          <Text style={[styles.mutedSmall, { color: theme.sub }]}>Photos added: {photos.length}/4</Text>
         </ScrollView>
       </View>
       <View style={styles.footer}>
-        <TouchableOpacity style={[styles.cta, (photos.length !== 4 || saving) && styles.ctaDisabled]} onPress={finish} disabled={photos.length !== 4 || saving}>
-          {saving ? <ActivityIndicator color="#000" /> : <Text style={styles.ctaText}>Finish</Text>}
+        <TouchableOpacity style={[styles.cta, { backgroundColor: theme.ctaBg }, (photos.length !== 4 || saving) && styles.ctaDisabled]} onPress={finish} disabled={photos.length !== 4 || saving}>
+          {saving ? <ActivityIndicator color={theme.ctaText} /> : <Text style={[styles.ctaText, { color: theme.ctaText }]}>Finish</Text>}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -227,19 +249,19 @@ export default function OnboardingPhotos() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a" },
+  container: { flex: 1 },
   body: { flex: 1, padding: 16 },
-  title: { color: "#fff", fontSize: 22, fontWeight: "800" },
-  subtitle: { color: "#9aa0a6", marginTop: 6 },
-  btn: { backgroundColor: '#fff', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12 },
-  btnText: { color: '#000', fontWeight: '800' },
+  title: { fontSize: 22, fontWeight: "800" },
+  subtitle: { marginTop: 6 },
+  btn: { borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1 },
+  btnText: { fontWeight: '800' },
   btnDisabled: { opacity: 0.6 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
-  gridItem: { width: '31%', aspectRatio: 1, backgroundColor: '#111', borderColor: '#222', borderWidth: 1, borderRadius: 10, overflow: 'hidden', position: 'relative' },
-  remove: { position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
-  mutedSmall: { color: '#888', fontSize: 12, marginTop: 6 },
+  gridItem: { width: '31%', aspectRatio: 1, borderWidth: 1, borderRadius: 10, overflow: 'hidden', position: 'relative' },
+  remove: { position: 'absolute', top: 6, right: 6, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, borderWidth: 1 },
+  mutedSmall: { fontSize: 12, marginTop: 6 },
   footer: { padding: 16 },
-  cta: { backgroundColor: "#fff", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
+  cta: { borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   ctaDisabled: { opacity: 0.6 },
-  ctaText: { color: "#000", fontSize: 16, fontWeight: "800" },
+  ctaText: { fontSize: 16, fontWeight: "800" },
 });

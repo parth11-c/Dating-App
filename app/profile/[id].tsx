@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, TouchableOpacity, ActivityIndicator, Alert, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, router } from "expo-router";
@@ -13,25 +13,53 @@ export default function UserProfileViewScreen() {
   const [liking, setLiking] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
 
+  const theme = useMemo(() => {
+    if (resolvedThemeMode === 'light') {
+      return {
+        bg: '#FFF5F8',
+        text: '#1a1a1a',
+        border: '#f0cfd8',
+        accent: '#ff5b80',
+      } as const;
+    }
+    return {
+      bg: '#0a0a0a',
+      text: '#fff',
+      border: '#191919',
+      accent: '#ff5b80',
+    } as const;
+  }, [resolvedThemeMode]);
+
   const onLike = async () => {
     try {
       if (!id || !currentUser?.id) return;
       setLiking(true);
-      // Like == Match: directly ensure a match row exists (order-invariant pair)
-      try {
-        const a = currentUser.id < id ? currentUser.id : id;
-        const b = currentUser.id < id ? id : currentUser.id;
-        const { data: existingMatch, error: selErr } = await supabase
-          .from('matches')
-          .select('id')
-          .or(`and(user1_id.eq.${a},user2_id.eq.${b}),and(user1_id.eq.${b},user2_id.eq.${a})`)
-          .maybeSingle();
-        if (!selErr && !existingMatch) {
-          await supabase.from('matches').insert({ user1_id: a, user2_id: b });
-        }
-      } catch {}
-      // Toast: Matched
-      setToast('Matched!');
+      // If already matched, don't send a request again; show subtle notice and go to Matches
+      const a = currentUser.id < id ? currentUser.id : id;
+      const b = currentUser.id < id ? id : currentUser.id;
+      const { data: existingMatch } = await supabase
+        .from('matches')
+        .select('id')
+        .or(`and(user1_id.eq.${a},user2_id.eq.${b}),and(user1_id.eq.${b},user2_id.eq.${a})`)
+        .maybeSingle();
+      if (existingMatch) {
+        setToast('Already a match');
+        setTimeout(() => setToast(null), 1500);
+        setLiking(false);
+        router.push('/(tabs)/matches' as any);
+        return;
+      }
+      // Create like request only; match is created when the other accepts
+      const { data: existing } = await supabase
+        .from('likes')
+        .select('id')
+        .eq('liker_id', currentUser.id)
+        .eq('liked_id', id)
+        .maybeSingle();
+      if (!existing) {
+        await supabase.from('likes').insert({ liker_id: currentUser.id, liked_id: id });
+      }
+      setToast('Request sent');
       setTimeout(() => setToast(null), 2000);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Something went wrong.');
@@ -40,7 +68,15 @@ export default function UserProfileViewScreen() {
     }
   };
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#0a0a0a" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }}>
+      {/* Header to match tabs style */}
+      <View style={[styles.header, { borderBottomColor: theme.border }]}> 
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn} accessibilityLabel="Back">
+          <Ionicons name="chevron-back" size={18} color={theme.text} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Profile</Text>
+        <View style={{ width: 40 }} />
+      </View>
       {/* Reuse the unified ProfileView UI and always show Like action */}
       <ProfileView
         userId={id}
@@ -78,6 +114,9 @@ export default function UserProfileViewScreen() {
 }
 
 const styles = StyleSheet.create({
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  headerBtn: { width: 40, height: 32, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontWeight: '800', fontSize: 18 },
   actionsRow: { flexDirection: 'row', alignItems: 'center' },
   likeFab: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a0f14', borderWidth: 1, borderColor: '#2a1a22' },
   toastWrap: { position: 'absolute', left: 0, right: 0, bottom: 24, alignItems: 'center', justifyContent: 'center' },

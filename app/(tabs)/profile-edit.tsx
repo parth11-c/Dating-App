@@ -56,6 +56,14 @@ export default function ProfileEditScreen() {
   const [allInterests, setAllInterests] = React.useState<Array<{ id: number; name: string }>>([]);
   const [loadingInterests, setLoadingInterests] = React.useState(false);
   const [showInterestsDropdown, setShowInterestsDropdown] = React.useState(false);
+  // Location search state
+  const [locationQuery, setLocationQuery] = React.useState<string>('');
+  const [showLocationSuggestions, setShowLocationSuggestions] = React.useState<boolean>(false);
+  const filteredLocations = React.useMemo(() => {
+    const q = locationQuery.trim().toLowerCase();
+    if (!q) return [] as string[];
+    return STANDARD_LOCATIONS.filter(l => l.toLowerCase().includes(q)).slice(0, 10);
+  }, [locationQuery]);
 
   const load = React.useCallback(async () => {
     if (!currentUser?.id) return;
@@ -86,6 +94,23 @@ export default function ProfileEditScreen() {
   }, [currentUser?.id]);
 
   React.useEffect(() => { load(); }, [load]);
+
+  // Sync location query when profile loads/changes
+  React.useEffect(() => {
+    setLocationQuery(profile?.location ?? '');
+  }, [profile?.location]);
+
+  // Realtime: subscribe to changes for the current user
+  React.useEffect(() => {
+    if (!currentUser?.id) return;
+    const channel = supabase
+      .channel(`realtime-profile-edit-${currentUser.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${currentUser.id}` }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'photos', filter: `user_id=eq.${currentUser.id}` }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_interests', filter: `user_id=eq.${currentUser.id}` }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUser?.id, load]);
 
   // Load catalog of interests
   const loadAllInterests = React.useCallback(async () => {
@@ -154,19 +179,11 @@ export default function ProfileEditScreen() {
       location: profile.location ?? null,
       religion: profile.religion ?? null,
     };
-
-  // Reorder a photo within the local array (UI-only)
-  // (Shuffle removed; using drag-and-drop instead)
-
-  // On first load with photos, set first as main avatar once
-  const autoSetMainRef = React.useRef(false);
-  React.useEffect(() => {
-    if (!autoSetMainRef.current && photos && photos.length > 0) {
-      autoSetMainRef.current = true;
-      const first = photos[0];
-      if (first?.image_url) updateProfile({ avatarUri: first.image_url }).catch(() => {});
+    // Enforce allowed locations only
+    if (payload.location && !STANDARD_LOCATIONS.includes(payload.location)) {
+      payload.location = null;
     }
-  }, [photos.length]);
+    // Save profile changes
     const { error } = await supabase.from('profiles').upsert(payload, { onConflict: 'id' });
     if (error) {
       Alert.alert('Error', error.message);
@@ -216,7 +233,10 @@ export default function ProfileEditScreen() {
       if (upErr) throw upErr;
       const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(filename);
       const publicUrl = data.publicUrl;
-      const { error: insErr } = await supabase.from('photos').insert({ user_id: currentUser.id, image_url: publicUrl });
+      // Set position at end of current list if column exists
+      const insertPayload: any = { user_id: currentUser.id, image_url: publicUrl };
+      try { insertPayload.position = photos.length; } catch {}
+      const { error: insErr } = await supabase.from('photos').insert(insertPayload);
       if (insErr) throw insErr;
       await load();
     } catch (e: any) { Alert.alert('Upload failed', e?.message || 'Please try again.'); }
@@ -229,6 +249,50 @@ export default function ProfileEditScreen() {
     const idx = publicUrl.indexOf(marker);
     if (idx === -1) return null;
     return publicUrl.substring(idx + marker.length);
+  };
+
+  // Replace a specific photo in-place by picking a new image
+  const replacePhoto = async (photoId: number, oldUrl: string) => {
+    if (!currentUser?.id) return;
+    try {
+      setBusyPhotoIds(prev => new Set(prev).add(photoId));
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission', 'Photo library permission is required.'); return; }
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.9, allowsEditing: true });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      const uri = result.assets[0].uri;
+      // upload
+      const res = await fetch(uri);
+      const arrayBuffer = await res.arrayBuffer();
+      const lower = uri.toLowerCase();
+      let ext = 'jpg';
+      if (lower.includes('.png')) ext = 'png';
+      else if (lower.includes('.webp')) ext = 'webp';
+      else if (lower.includes('.heic')) ext = 'heic';
+      else if (lower.includes('.heif')) ext = 'heif';
+      const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'heic' ? 'image/heic' : ext === 'heif' ? 'image/heif' : 'image/jpeg';
+      const filename = `${currentUser.id}/${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+      const { error: upErr } = await supabase.storage.from(PHOTOS_BUCKET).upload(filename, arrayBuffer, { contentType, upsert: false });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(filename);
+      const publicUrl = data.publicUrl;
+      // update existing row to preserve position/order
+      const { error: updErr } = await supabase.from('photos').update({ image_url: publicUrl }).eq('id', photoId);
+      if (updErr) throw updErr;
+      // remove previous storage object best-effort
+      const storagePath = storagePathFromPublicUrl(oldUrl, PHOTOS_BUCKET);
+      if (storagePath) {
+        const { error: rmErr } = await supabase.storage.from(PHOTOS_BUCKET).remove([storagePath]);
+        if (rmErr && !String(rmErr.message || rmErr).toLowerCase().includes('not found')) {
+          console.warn('Storage remove failed:', rmErr);
+        }
+      }
+      await load();
+    } catch (e: any) {
+      Alert.alert('Replace failed', e?.message || 'Please try again.');
+    } finally {
+      setBusyPhotoIds(prev => { const n = new Set(prev); n.delete(photoId); return n; });
+    }
   };
 
   const deletePhoto = async (photoId: number) => {
@@ -302,13 +366,26 @@ export default function ProfileEditScreen() {
           onChangeText={(t) => setProfile((p: any) => ({ ...(p || {}), bio: t }))}
         />
         <Text style={styles.label}>Location</Text>
-        <TextInput
-          placeholder="City"
-          placeholderTextColor={theme.placeholder}
-          style={[styles.input, { color: theme.text, backgroundColor: theme.inputBg, borderColor: theme.inputBorder }]}
-          value={profile?.location ?? ''}
-          onChangeText={(t) => setProfile((p: any) => ({ ...(p || {}), location: t }))}
-        />
+        <View style={{ position: 'relative' }}>
+          <TextInput
+            placeholder="Search city"
+            placeholderTextColor={theme.placeholder}
+            style={[styles.input, { color: theme.text, backgroundColor: theme.inputBg, borderColor: theme.inputBorder }]}
+            value={locationQuery}
+            onFocus={() => setShowLocationSuggestions(true)}
+            onChangeText={(t) => { setLocationQuery(t); setShowLocationSuggestions(true); }}
+            onBlur={() => setTimeout(() => setShowLocationSuggestions(false), 150)}
+          />
+          {showLocationSuggestions && filteredLocations.length > 0 && (
+            <View style={{ position: 'absolute', left: 0, right: 0, top: 48, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 10, overflow: 'hidden', zIndex: 10 }}>
+              {filteredLocations.map((loc) => (
+                <TouchableOpacity key={loc} onPress={() => { setProfile((p: any) => ({ ...(p || {}), location: loc })); setLocationQuery(loc); setShowLocationSuggestions(false); }} style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
+                  <Text style={{ color: theme.text, fontWeight: '600' }}>{loc}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
         {/* Gender section removed */}
         <Text style={styles.label}>Date of birth</Text>
         {Platform.OS === 'web' ? (
@@ -478,9 +555,17 @@ export default function ProfileEditScreen() {
             keyExtractor={(item) => String(item.id)}
             numColumns={2}
             activationDistance={12}
-            onDragEnd={({ data }) => {
+            onDragEnd={async ({ data }) => {
               setPhotos(data);
               if (data[0]?.image_url) updateProfile({ avatarUri: data[0].image_url }).catch(() => {});
+              // Persist order if 'position' column exists (ignore errors)
+              try {
+                await Promise.all(
+                  data.map((item, index) =>
+                    supabase.from('photos').update({ position: index }).eq('id', item.id)
+                  )
+                );
+              } catch {}
             }}
             containerStyle={{}}
             contentContainerStyle={{}}
@@ -488,16 +573,18 @@ export default function ProfileEditScreen() {
             renderItem={({ item, getIndex, drag, isActive }: RenderItemParams<{ id: number; image_url: string }>) => {
               const idx = getIndex?.() ?? 0;
               return (
-                <Pressable onLongPress={drag} disabled={isActive} style={{ flex: 1, margin: 6, aspectRatio: 1, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: theme.gridBorder, position: 'relative' }}>
+                <Pressable onLongPress={drag} onPress={() => replacePhoto(item.id, item.image_url)} disabled={isActive} style={{ flex: 1, margin: 6, aspectRatio: 1, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: theme.gridBorder, position: 'relative' }}>
                   <Image source={{ uri: item.image_url }} style={{ width: '100%', height: '100%', opacity: isActive ? 0.9 : 1 }} />
                   {idx === 0 && (
                     <View style={{ position: 'absolute', top: 6, left: 6, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}>
                       <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12 }}>MAIN</Text>
                     </View>
                   )}
-                  <TouchableOpacity style={styles.remove} onPress={() => deletePhoto(item.id)} disabled={busyPhotoIds.has(item.id)}>
-                    {busyPhotoIds.has(item.id) ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800' }}>X</Text>}
-                  </TouchableOpacity>
+                  {busyPhotoIds.has(item.id) && (
+                    <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.25)' }}>
+                      <ActivityIndicator color="#fff" />
+                    </View>
+                  )}
                 </Pressable>
               );
             }}
@@ -538,6 +625,30 @@ const styles = StyleSheet.create({
   modalHeaderBtn: { fontWeight: '700' },
   modalTitle: { fontWeight: '800' },
 });
+
+// Restricted list of standard locations shown in the Location picker
+const STANDARD_LOCATIONS: string[] = [
+  'Mumbai',
+  'Delhi',
+  'Bengaluru',
+  'Hyderabad',
+  'Ahmedabad',
+  'Chennai',
+  'Kolkata',
+  'Surat',
+  'Pune',
+  'Jaipur',
+  'Lucknow',
+  'Kanpur',
+  'Nagpur',
+  'Indore',
+  'Thane',
+  'Bhopal',
+  'Visakhapatnam',
+  'Patna',
+  'Vadodara',
+  'Ghaziabad',
+];
 
 const RELIGIONS = [
   { key: 'hindu', label: 'Hindu' },

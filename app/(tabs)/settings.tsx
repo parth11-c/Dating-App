@@ -51,12 +51,6 @@ export default function SettingsScreen() {
         <TouchableOpacity style={[styles.item, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => Alert.alert('Privacy', 'Privacy settings placeholder') }>
           <Text style={[styles.itemText, { color: theme.text }]}>Privacy</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.item, { backgroundColor: theme.card, borderColor: '#7a1f1f' }]} onPress={() => Alert.alert('Delete account', 'This will permanently delete your account. Continue?', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Delete', style: 'destructive', onPress: () => Alert.alert('Requested', 'We will implement delete flow here.') },
-        ])}>
-          <Text style={[styles.itemText, { color: '#ff6b6b' }]}>Delete account</Text>
-        </TouchableOpacity>
         <TouchableOpacity style={[styles.item, { marginTop: 20, backgroundColor: theme.card, borderColor: theme.border }]} onPress={onSignOut} disabled={signingOut}>
           <Text style={[styles.itemText, { color: theme.text }]}>{signingOut ? "Signing out…" : "Sign out"}</Text>
         </TouchableOpacity>

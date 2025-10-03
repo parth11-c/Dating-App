@@ -2,13 +2,12 @@ import React, { useState } from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { fontSizes, responsiveValue, buttonDimensions, shadows } from "../../lib/responsive";
+import { fontSizes, responsiveValue, shadows } from "../../lib/responsive";
 import { useStore } from "@/store";
 
 export default function SignUpScreen() {
   const { signUp } = useStore();
   const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -17,14 +16,12 @@ export default function SignUpScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const validateEmail = (value: string) => /[^\s@]+@[^\s@]+\.[^\s@]+/.test(value);
-  const validatePhone = (value: string) => /^\+?[0-9\s-]{7,15}$/.test(value.trim());
 
   const handleSignUp = async () => {
-    if (!fullName.trim() || !phone.trim() || !email || !password || !confirmPassword) {
+    if (!fullName.trim()  || !email || !password || !confirmPassword) {
       return Alert.alert("Error", "Please fill all fields");
     }
     if (!validateEmail(email)) return Alert.alert("Error", "Please enter a valid email address");
-    if (!validatePhone(phone)) return Alert.alert("Error", "Please enter a valid phone number");
     if (fullName.trim().length < 2) return Alert.alert("Error", "Full name looks too short");
     if (password.length < 6) return Alert.alert("Error", "Password must be at least 6 characters long");
     if (password !== confirmPassword) return Alert.alert("Error", "Passwords do not match");
@@ -71,16 +68,7 @@ export default function SignUpScreen() {
 
                 {/* City field removed as requested */}
 
-                <View style={styles.inputBlock}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Phone"
-                    placeholderTextColor="#9b7f89"
-                    value={phone}
-                    onChangeText={setPhone}
-                    keyboardType="phone-pad"
-                  />
-                </View>
+         
 
                 <View style={styles.inputBlock}>
                   <TextInput

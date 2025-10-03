@@ -11,16 +11,16 @@ export default function OnboardingDetails() {
         <Text style={styles.subtitle}>This is a placeholder screen. Implement personal details form here.</Text>
       </View>
       <View style={styles.footer}>
-        <Button title="Next" onPress={() => router.push("/onboarding/photos" as any)} />
+        <Button title="Next" color="#ff5b80" onPress={() => router.push("/onboarding/photos" as any)} />
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a" },
+  container: { flex: 1, backgroundColor: "#FFF5F8" },
   body: { flex: 1, padding: 16, gap: 8 },
-  title: { color: "#fff", fontSize: 22, fontWeight: "800" },
-  subtitle: { color: "#9aa0a6" },
+  title: { color: "#1a1a1a", fontSize: 22, fontWeight: "800" },
+  subtitle: { color: "#6b5b61" },
   footer: { padding: 16 },
 });

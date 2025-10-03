@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { fontSizes, responsiveValue, buttonDimensions, shadows } from "../lib/responsive";
+import { fontSizes, responsiveValue, shadows } from "../lib/responsive";
 import { supabase } from "@/lib/supabase";
 
 export default function Index() {

@@ -1,8 +1,9 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useStore } from "@/store";
 import { supabase } from "@/lib/supabase";
+import * as ImagePicker from 'expo-image-picker';
 
 type Profile = {
   id: string;
@@ -42,7 +43,7 @@ type ProfileViewProps = {
 };
 
 export default function ProfileViewScreen({ userId, embedded, actions, onLike, liking, initialProfile, initialPhotos, initialInterests }: ProfileViewProps) {
-  const { currentUser, resolvedThemeMode } = useStore();
+  const { currentUser, resolvedThemeMode, updateProfile } = useStore();
   const theme = useMemo(() => {
     if (resolvedThemeMode === 'light') {
       return {
@@ -64,6 +65,9 @@ export default function ProfileViewScreen({ userId, embedded, actions, onLike, l
   const [interestNames, setInterestNames] = React.useState<string[]>(initialInterests ?? []);
   const [loading, setLoading] = React.useState(!(initialProfile || (initialPhotos && initialPhotos.length)));
   const [heroLoaded, setHeroLoaded] = React.useState(false);
+  const [changingAvatar, setChangingAvatar] = React.useState(false);
+  const PHOTOS_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_PHOTOS_BUCKET || 'profile-photos';
+  const isSelf = !userId || userId === currentUser?.id;
 
   const load = React.useCallback(async () => {
     const targetId = userId || currentUser?.id;
@@ -71,13 +75,41 @@ export default function ProfileViewScreen({ userId, embedded, actions, onLike, l
     setLoading(true);
     const [{ data: p }, { data: ph }, { data: ui }] = await Promise.all([
       supabase.from('profiles').select('id, name, bio, gender, date_of_birth, location, religion').eq('id', targetId).maybeSingle(),
-      supabase.from('photos').select('id, image_url').eq('user_id', targetId).order('created_at', { ascending: false }),
+      // Fetch all columns to allow client-side sort by optional position then created_at
+      supabase.from('photos').select('*').eq('user_id', targetId).order('created_at', { ascending: false }),
       supabase.from('user_interests').select('interest_id, interests(name)').eq('user_id', targetId)
     ]);
     setProfile((p as any) || null);
-    setPhotos((ph as any[]) || []);
-    const names = ((ui as any[]) || []).map((r: any) => r?.interests?.name).filter((n: any) => typeof n === 'string');
-    setInterestNames(names);
+    const list = ((ph as any[]) || []);
+    const sorted = list.slice().sort((a, b) => {
+      const ap = Number.isFinite(a?.position) ? Number(a.position) : undefined;
+      const bp = Number.isFinite(b?.position) ? Number(b.position) : undefined;
+      if (typeof ap === 'number' && typeof bp === 'number') {
+        if (ap !== bp) return ap - bp;
+      } else if (typeof ap === 'number') {
+        return -1;
+      } else if (typeof bp === 'number') {
+        return 1;
+      }
+      // fallback: created_at desc
+      const at = a?.created_at ? new Date(a.created_at).getTime() : 0;
+      const bt = b?.created_at ? new Date(b.created_at).getTime() : 0;
+      return bt - at;
+    });
+    setPhotos(sorted.map((r: any) => ({ id: r.id, image_url: r.image_url })));
+    const uiRows = ((ui as any[]) || []);
+    let names = uiRows.map((r: any) => r?.interests?.name).filter((n: any) => typeof n === 'string');
+    // Fallback: if join isn't configured or blocked by RLS, fetch interests by IDs
+    if ((!names || names.length === 0) && uiRows.length > 0) {
+      const ids = uiRows.map((r: any) => r?.interest_id).filter((n: any) => typeof n === 'number');
+      if (ids.length > 0) {
+        try {
+          const { data: interests } = await supabase.from('interests').select('id, name').in('id', ids);
+          names = ((interests as any[]) || []).map((r: any) => r?.name).filter((n: any) => typeof n === 'string');
+        } catch {}
+      }
+    }
+    setInterestNames(names || []);
     setLoading(false);
   }, [currentUser?.id, userId]);
 
@@ -85,6 +117,19 @@ export default function ProfileViewScreen({ userId, embedded, actions, onLike, l
     if (initialProfile || (initialPhotos && initialPhotos.length)) return; // already have data; skip fetch
     load();
   }, [load, initialProfile, initialPhotos?.length]);
+
+  // Realtime: subscribe to changes for the viewed user
+  React.useEffect(() => {
+    const targetId = userId || currentUser?.id;
+    if (!targetId) return;
+    const channel = supabase
+      .channel(`realtime-profile-view-${targetId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${targetId}` }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'photos', filter: `user_id=eq.${targetId}` }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_interests', filter: `user_id=eq.${targetId}` }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [userId, currentUser?.id, load]);
 
   const age = React.useMemo(() => {
     const iso = profile?.date_of_birth; if (!iso) return undefined; const d = new Date(iso); if (isNaN(d.getTime())) return undefined;
@@ -102,6 +147,74 @@ export default function ProfileViewScreen({ userId, embedded, actions, onLike, l
 
   const hero = photos[0]?.image_url;
 
+  // Derive storage object path from a public URL
+  const storagePathFromPublicUrl = (publicUrl: string, bucket: string): string | null => {
+    const marker = `/storage/v1/object/public/${bucket}/`;
+    const idx = publicUrl.indexOf(marker);
+    if (idx === -1) return null;
+    return publicUrl.substring(idx + marker.length);
+  };
+
+  const replaceAvatarWithUri = async (uri: string) => {
+    if (!currentUser?.id) return;
+    setChangingAvatar(true);
+    try {
+      const res = await fetch(uri);
+      const arrayBuffer = await res.arrayBuffer();
+      const lower = uri.toLowerCase();
+      let ext = 'jpg';
+      if (lower.includes('.png')) ext = 'png';
+      else if (lower.includes('.webp')) ext = 'webp';
+      else if (lower.includes('.heic')) ext = 'heic';
+      else if (lower.includes('.heif')) ext = 'heif';
+      const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'heic' ? 'image/heic' : ext === 'heif' ? 'image/heif' : 'image/jpeg';
+      const filename = `${currentUser.id}/${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+      const { error: upErr } = await supabase.storage.from(PHOTOS_BUCKET).upload(filename, arrayBuffer, { contentType, upsert: false });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(filename);
+      const publicUrl = data.publicUrl;
+      // Update existing first photo row to keep count stable; insert only if none
+      const prevHero = photos[0];
+      if (prevHero?.id) {
+        const { error: updErr } = await supabase.from('photos').update({ image_url: publicUrl }).eq('id', prevHero.id);
+        if (updErr) throw updErr;
+        // Remove previous storage file best-effort
+        const storagePath = storagePathFromPublicUrl(prevHero.image_url, PHOTOS_BUCKET);
+        if (storagePath) {
+          const { error: rmErr } = await supabase.storage.from(PHOTOS_BUCKET).remove([storagePath]);
+          if (rmErr && !String(rmErr.message || rmErr).toLowerCase().includes('not found')) {
+            console.warn('Storage remove failed:', rmErr);
+          }
+        }
+      } else {
+        const { error: insErr } = await supabase.from('photos').insert({ user_id: currentUser.id, image_url: publicUrl });
+        if (insErr) throw insErr;
+      }
+      // Optimistically update in-memory avatar
+      try { await updateProfile?.({ avatarUri: publicUrl }); } catch {}
+      // No row deletions; order and count remain intact
+      // Refresh
+      setHeroLoaded(false);
+      await load();
+    } catch (e: any) {
+      Alert.alert('Change photo failed', e?.message || 'Please try again.');
+    } finally {
+      setChangingAvatar(false);
+    }
+  };
+
+  const pickNewAvatar = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission', 'Photo library permission is required.'); return; }
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.9 });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      await replaceAvatarWithUri(result.assets[0].uri);
+    } catch (e: any) {
+      Alert.alert('Pick failed', e?.message || 'Please try again.');
+    }
+  };
+
   const Container: any = embedded ? View : ScrollView;
   const containerProps: any = embedded ? { style: styles.containerEmbedded } : { style: [styles.container, { backgroundColor: theme.bg }], contentContainerStyle: styles.content, showsVerticalScrollIndicator: false };
 
@@ -112,27 +225,48 @@ export default function ProfileViewScreen({ userId, embedded, actions, onLike, l
       {/* Hero */}
       <View style={[styles.heroWrap, { backgroundColor: theme.heroBg, borderColor: theme.border }]}> 
         {hero ? (
-          <Image source={{ uri: hero }} style={styles.heroImage} onLoadEnd={() => setHeroLoaded(true)} />
+          isSelf ? (
+            <TouchableOpacity activeOpacity={0.85} onPress={pickNewAvatar}>
+              <Image source={{ uri: hero }} style={styles.heroImage} onLoadEnd={() => setHeroLoaded(true)} />
+            </TouchableOpacity>
+          ) : (
+            <Image source={{ uri: hero }} style={styles.heroImage} onLoadEnd={() => setHeroLoaded(true)} />
+          )
         ) : (
-          <View style={[styles.heroImage, { alignItems: 'center', justifyContent: 'center' }]}> 
-            {loading ? (
-              <ActivityIndicator color={theme.accent} />
-            ) : (
-              <Text style={{ color: theme.muted }}>No photos yet</Text>
-            )}
-          </View>
+          isSelf ? (
+            <TouchableOpacity activeOpacity={0.85} onPress={pickNewAvatar} style={[styles.heroImage, { alignItems: 'center', justifyContent: 'center' }]}> 
+              {loading ? (
+                <ActivityIndicator color={theme.accent} />
+              ) : (
+                <Text style={{ color: theme.muted }}>Add a photo</Text>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <View style={[styles.heroImage, { alignItems: 'center', justifyContent: 'center' }]}> 
+              {loading ? (
+                <ActivityIndicator color={theme.accent} />
+              ) : (
+                <Text style={{ color: theme.muted }}>No photos yet</Text>
+              )}
+            </View>
+          )
         )}
-        <View style={styles.heroShade} />
         <View style={[styles.heroOverlay, actions ? { paddingRight: 72 } : null]}>
-          <View style={[styles.badge, { backgroundColor: theme.badgeBg, borderColor: theme.badgeBorder }]}>
-            <Text style={[styles.badgeText, { color: resolvedThemeMode === 'light' ? theme.text : '#fff' }]}>Profile</Text>
-          </View>
           {profile?.name ? (
-            <Text style={[styles.heroName]} numberOfLines={1}>{profile.name}{age !== undefined ? `, ${age}` : ''}</Text>
+            <View style={styles.namePill}>
+              <Text style={styles.nameText} numberOfLines={1}>
+                {profile.name}{age !== undefined ? `, ${age}` : ''}
+              </Text>
+            </View>
           ) : (
             <View style={styles.nameSkeleton} />
           )}
         </View>
+        {changingAvatar && (
+          <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator color={theme.accent} />
+          </View>
+        )}
         {actions ? <View pointerEvents="box-none" style={styles.actionsOverlay}>{actions}</View> : null}
       </View>
 
@@ -226,12 +360,12 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   heroImage: { width: '100%', aspectRatio: 3/4, borderRadius: 24 },
-  heroShade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 160, backgroundColor: 'rgba(0,0,0,0.45)' },
   heroOverlay: { position: 'absolute', left: 16, right: 16, bottom: 16, zIndex: 2 },
   actionsOverlay: { position: 'absolute', left: 12, right: 12, bottom: 12, flexDirection: 'row', justifyContent: 'flex-end', zIndex: 3 },
   badge: { alignSelf: 'flex-start', backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', marginBottom: 8 },
   badgeText: { color: '#fff', fontWeight: '700' },
-  heroName: { color: '#fff', fontSize: 28, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.9)', textShadowRadius: 12, textShadowOffset: { width: 0, height: 1 } },
+  namePill: { alignSelf: 'flex-start', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', backgroundColor: 'rgba(0,0,0,0.55)', maxWidth: '90%' },
+  nameText: { color: '#fff', fontSize: 22, fontWeight: '800' },
   cardRounded: {
     backgroundColor: '#111',
     borderColor: '#222',

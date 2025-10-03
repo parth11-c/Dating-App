@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, UIManager, Dimensions, ScrollView, Animated, Easing } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Dimensions, ScrollView } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { supabase } from "@/lib/supabase";
@@ -18,7 +18,8 @@ type Profile = {
   bio?: string | null;
   avatar_url?: string | null;
   location?: string | null;
-  photos?: { image_url: string }[];
+  photos?: { id?: number; image_url: string; position?: number | null; created_at?: string | null }[];
+  user_interests?: { interests?: { name?: string | null } | null }[];
 };
 
 function ageFromDob(dobIso?: string) {
@@ -41,13 +42,8 @@ export default function HomeScreen() {
   const [myId, setMyId] = React.useState<string>('');
   const [myGender, setMyGender] = React.useState<Profile['gender']>(null);
   const [actionLoading, setActionLoading] = React.useState<null | 'pass' | 'like'>(null);
-  const [transitionLoading, setTransitionLoading] = React.useState(false);
-  // Enable LayoutAnimation on Android
-  React.useEffect(() => {
-    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-      UIManager.setLayoutAnimationEnabledExperimental(true);
-    }
-  }, []);
+  // Track profiles the user has dismissed (pass/like) in this session to avoid resurfacing
+  const [dismissedIds, setDismissedIds] = React.useState<Set<string>>(new Set());
 
   const theme = useMemo(() => {
     if (resolvedThemeMode === 'light') {
@@ -101,15 +97,29 @@ export default function HomeScreen() {
           if (savedMax) setAgeMax(Math.max(18, Math.min(99, parseInt(savedMax) || 99)));
         }
 
-        const [{ data: sess }, { data: list, error }] = await Promise.all([
-          supabase.auth.getSession(),
-          supabase
-            .from('profiles')
-            .select('id, name, gender, date_of_birth, bio, avatar_url, location, photos ( image_url )')
-            .order('created_at', { ascending: false })
-        ]);
-        if (!mounted) return;
+        const { data: sess } = await supabase.auth.getSession();
         const uid = sess.session?.user?.id || '';
+        // Build exclusion list at DB layer: profiles previously liked/passed by me
+        // Fetch liked profiles
+        const { data: likedData } = await supabase.from('likes').select('liked_id').eq('liker_id', uid);
+        const likedIds: string[] = Array.isArray(likedData) ? likedData.map((r: any) => r.liked_id).filter(Boolean) : [];
+        
+        // Skip passes for now since table doesn't exist
+        const passedIds: string[] = [];
+        const excludeSet = new Set<string>([...likedIds, ...passedIds, uid].filter(Boolean));
+        const excludeList = Array.from(excludeSet);
+        let profilesQuery = supabase
+          .from('profiles')
+          .select('id, name, gender, date_of_birth, bio, avatar_url, location, photos ( id, image_url, position, created_at ), user_interests ( interests ( name ) )')
+          .order('position', { ascending: true, foreignTable: 'photos', nullsFirst: false })
+          .order('created_at', { ascending: false, foreignTable: 'photos' })
+          .order('created_at', { ascending: false });
+        if (excludeList.length > 0) {
+          const inClause = `(${excludeList.map((id) => `"${id}"`).join(',')})`;
+          profilesQuery = profilesQuery.not('id', 'in', inClause);
+        }
+        const { data: list, error } = await profilesQuery;
+        if (!mounted) return;
         setMyId(uid);
         // fetch my gender
         if (uid) {
@@ -123,9 +133,27 @@ export default function HomeScreen() {
           } catch {}
         }
         const filtered = (list as any[] | null)?.filter(p => p.id !== uid) || [];
-        setProfiles(shuffleArray(filtered as Profile[]));
+        // Ensure each profile's photos are ordered: position asc, then created_at desc
+        const normalized = filtered.map((p: any) => ({
+          ...p,
+          photos: (p.photos || []).slice().sort((a: any, b: any) => {
+            const ap = Number.isFinite(a?.position) ? Number(a.position) : undefined;
+            const bp = Number.isFinite(b?.position) ? Number(b.position) : undefined;
+            if (typeof ap === 'number' && typeof bp === 'number') {
+              if (ap !== bp) return ap - bp;
+            } else if (typeof ap === 'number') {
+              return -1;
+            } else if (typeof bp === 'number') {
+              return 1;
+            }
+            const at = a?.created_at ? new Date(a.created_at).getTime() : 0;
+            const bt = b?.created_at ? new Date(b.created_at).getTime() : 0;
+            return bt - at;
+          }),
+        }));
+        setProfiles(shuffleArray(normalized as Profile[]));
       } catch (e) {
-        console.error('[Home] load profiles error', e);
+        // Silently handle error - will show empty state
       } finally {
         if (mounted) setLoading(false);
       }
@@ -133,53 +161,94 @@ export default function HomeScreen() {
     return () => { mounted = false; };
   }, []);
 
-  // Do not persist filters here; editing is moved to Profile
-
-  // Slide animation state
-  const translateCurrent = React.useRef(new Animated.Value(0)).current;
-  const translateNext = React.useRef(new Animated.Value(screenWidth)).current;
-  const scaleCurrent = React.useRef(new Animated.Value(1)).current;
-  const scaleNext = React.useRef(new Animated.Value(1.03)).current;
-  const opacityCurrent = React.useRef(new Animated.Value(1)).current;
-  const opacityNext = React.useRef(new Animated.Value(0.9)).current;
-
-  function runTransition(direction: 'left' | 'right', hasNext: boolean, onDone: () => void) {
-    const ease = Easing.bezier(0.22, 1, 0.36, 1); // smooth ease-out
-    if (hasNext) {
-      translateNext.setValue(direction === 'left' ? screenWidth : -screenWidth);
-      scaleNext.setValue(1.03);
-      opacityNext.setValue(0.9);
-      scaleCurrent.setValue(1);
-      opacityCurrent.setValue(1);
-      Animated.parallel([
-        Animated.timing(translateCurrent, { toValue: direction === 'left' ? -screenWidth : screenWidth, duration: 450, easing: ease, useNativeDriver: true }),
-        Animated.timing(translateNext, { toValue: 0, duration: 450, easing: ease, useNativeDriver: true }),
-        Animated.timing(scaleCurrent, { toValue: 0.97, duration: 450, easing: ease, useNativeDriver: true }),
-        Animated.timing(scaleNext, { toValue: 1, duration: 450, easing: ease, useNativeDriver: true }),
-        Animated.timing(opacityCurrent, { toValue: 0.85, duration: 450, easing: ease, useNativeDriver: true }),
-        Animated.timing(opacityNext, { toValue: 1, duration: 450, easing: ease, useNativeDriver: true }),
-      ]).start(() => {
-        translateCurrent.setValue(0);
-        translateNext.setValue(screenWidth);
-        scaleCurrent.setValue(1);
-        scaleNext.setValue(1.03);
-        opacityCurrent.setValue(1);
-        opacityNext.setValue(0.9);
-        onDone();
-      });
-    } else {
-      Animated.parallel([
-        Animated.timing(translateCurrent, { toValue: direction === 'left' ? -screenWidth : screenWidth, duration: 450, easing: ease, useNativeDriver: true }),
-        Animated.timing(scaleCurrent, { toValue: 0.97, duration: 450, easing: ease, useNativeDriver: true }),
-        Animated.timing(opacityCurrent, { toValue: 0.85, duration: 450, easing: ease, useNativeDriver: true }),
-      ]).start(() => {
-        translateCurrent.setValue(0);
-        scaleCurrent.setValue(1);
-        opacityCurrent.setValue(1);
-        onDone();
-      });
+  // Start over: refetch and shuffle all profiles
+  const startOver = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      const { data: sess } = await supabase.auth.getSession();
+      const uid = sess.session?.user?.id || '';
+      // Build exclusion list at DB layer
+      // Fetch liked profiles
+      const { data: likedData } = await supabase.from('likes').select('liked_id').eq('liker_id', uid);
+      const likedIds: string[] = Array.isArray(likedData) ? likedData.map((r: any) => r.liked_id).filter(Boolean) : [];
+      
+      // Skip passes for now since table doesn't exist
+      const passedIds: string[] = [];
+      const excludeSet = new Set<string>([...likedIds, ...passedIds, uid].filter(Boolean));
+      const excludeList = Array.from(excludeSet);
+      let profilesQuery = supabase
+        .from('profiles')
+        .select('id, name, gender, date_of_birth, bio, avatar_url, location, photos ( id, image_url, position, created_at ), user_interests ( interests ( name ) )')
+        .order('position', { ascending: true, foreignTable: 'photos', nullsFirst: false })
+        .order('created_at', { ascending: false, foreignTable: 'photos' })
+        .order('created_at', { ascending: false });
+      if (excludeList.length > 0) {
+        const inClause = `(${excludeList.map((id) => `"${id}"`).join(',')})`;
+        profilesQuery = profilesQuery.not('id', 'in', inClause);
+      }
+      const { data: list } = await profilesQuery;
+      setMyId(uid);
+      // refresh my gender
+      if (uid) {
+        try {
+          const { data: me } = await supabase
+            .from('profiles')
+            .select('gender')
+            .eq('id', uid)
+            .maybeSingle();
+          setMyGender(me?.gender ?? null);
+        } catch {}
+      }
+      const filteredList = (list as any[] | null)?.filter(p => p.id !== uid) || [];
+      const normalized = filteredList.map((p: any) => ({
+        ...p,
+        photos: (p.photos || []).slice().sort((a: any, b: any) => {
+          const ap = Number.isFinite(a?.position) ? Number(a.position) : undefined;
+          const bp = Number.isFinite(b?.position) ? Number(b.position) : undefined;
+          if (typeof ap === 'number' && typeof bp === 'number') {
+            if (ap !== bp) return ap - bp;
+          } else if (typeof ap === 'number') {
+            return -1;
+          } else if (typeof bp === 'number') {
+            return 1;
+          }
+          const at = a?.created_at ? new Date(a.created_at).getTime() : 0;
+          const bt = b?.created_at ? new Date(b.created_at).getTime() : 0;
+          return bt - at;
+        }),
+      }));
+      setProfiles(shuffleArray(normalized as Profile[]));
+      // Reset dismissed set when starting over
+      setDismissedIds(new Set());
+    } catch (e) {
+      // Silently handle error - will show empty state
+    } finally {
+      setLoading(false);
     }
-  }
+  }, []);
+
+  // Realtime: if my profile changes (gender or dob) or if I like someone from elsewhere, refresh the list
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data: sess } = await supabase.auth.getSession();
+      const uid = sess.session?.user?.id || '';
+      if (!uid) return;
+      const channel = supabase
+        .channel(`home-realtime-${uid}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${uid}` }, () => {
+          if (mounted) startOver();
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'likes', filter: `liker_id=eq.${uid}` }, () => {
+          if (mounted) startOver();
+        })
+        .subscribe();
+      return () => { try { supabase.removeChannel(channel); } catch {} };
+    })();
+    return () => { mounted = false; };
+  }, [startOver]);
+
+  // Do not persist filters here; editing is moved to Profile
 
   const handleLike = async (likedId: string) => {
     try {
@@ -188,6 +257,21 @@ export default function HomeScreen() {
         return;
       }
       setActionLoading('like');
+      // If already matched, do not allow sending a request again
+      const a = myId < likedId ? myId : likedId;
+      const b = myId < likedId ? likedId : myId;
+      const { data: existingMatch } = await supabase
+        .from('matches')
+        .select('id')
+        .or(`and(user1_id.eq.${a},user2_id.eq.${b}),and(user1_id.eq.${b},user2_id.eq.${a})`)
+        .maybeSingle();
+      if (existingMatch) {
+        // Subtle notice then go to Matches
+        try { Alert.alert('Already a match', 'You already matched with this profile.'); } catch {}
+        setActionLoading(null);
+        router.push('/(tabs)/matches' as any);
+        return;
+      }
       // If already liked, go to Matches directly
       const { data: existing } = await supabase
         .from('likes')
@@ -205,39 +289,10 @@ export default function HomeScreen() {
         Alert.alert('Could not like', error.message);
         return;
       }
-      // Advance with slide animation (like -> slide right, next from left)
-      const hasNext = filtered.length > 1;
-      setTransitionLoading(true);
-      runTransition('right', hasNext, () => {
-        setProfiles(prev => prev.filter(p => p.id !== likedId));
-        setActionLoading(null);
-        setTimeout(() => setTransitionLoading(false), 1000);
-      });
-      // Optional: Check mutual like to hint a match (actual match row may be created by backend)
-      const { data: mutual } = await supabase
-        .from('likes')
-        .select('id')
-        .eq('liker_id', likedId)
-        .eq('liked_id', myId)
-        .maybeSingle();
-      if (mutual) {
-        setTransitionLoading(false);
-        // Ensure a match row exists (order-invariant pair)
-        try {
-          const a = myId < likedId ? myId : likedId;
-          const b = myId < likedId ? likedId : myId;
-          const { data: existingMatch } = await supabase
-            .from('matches')
-            .select('id')
-            .or(`and(user1_id.eq.${a},user2_id.eq.${b}),and(user1_id.eq.${b},user2_id.eq.${a})`)
-            .maybeSingle();
-          if (!existingMatch) {
-            await supabase.from('matches').insert({ user1_id: a, user2_id: b });
-          }
-        } catch {}
-        // Navigate to Matches page
-        router.push('/(tabs)/matches' as any);
-      }
+      // Immediately remove from current list and mark as dismissed - no animation
+      setProfiles(prev => prev.filter(p => p.id !== likedId));
+      setDismissedIds(prev => new Set(prev).add(likedId));
+      setActionLoading(null);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Something went wrong.');
       setActionLoading(null);
@@ -245,21 +300,19 @@ export default function HomeScreen() {
   };
 
   const handlePass = async (passedId: string) => {
-    // Animate removal and remove locally. If you have a `passes` table, insert there too.
     try {
       setActionLoading('pass');
-      const hasNext = filtered.length > 1;
-      setTransitionLoading(true);
-      runTransition('left', hasNext, () => {
-        setProfiles(prev => prev.filter(p => p.id !== passedId));
-        setActionLoading(null);
-        setTimeout(() => setTransitionLoading(false), 1000);
-      });
+      // Immediately remove from current list and mark as dismissed - no animation
+      setProfiles(prev => prev.filter(p => p.id !== passedId));
+      setDismissedIds(prev => new Set(prev).add(passedId));
+      setActionLoading(null);
     } catch {}
   };
 
   const filtered = React.useMemo(() => {
     return profiles.filter(p => {
+      // Exclude locally dismissed profiles (pass/like) for this session
+      if (dismissedIds.has(p.id)) return false;
       // gender filter: only show opposite gender of current user
       if (myGender === 'male') {
         if (p.gender !== 'female') return false;
@@ -273,7 +326,7 @@ export default function HomeScreen() {
       }
       return true;
     });
-  }, [profiles, myGender, ageMin, ageMax]);
+  }, [profiles, myGender, ageMin, ageMax, dismissedIds]);
 
   // Shuffle helper
   function shuffleArray<T>(arr: T[]): T[] {
@@ -284,39 +337,6 @@ export default function HomeScreen() {
     }
     return a;
   }
-
-  // Start over: refetch and shuffle all profiles
-  const startOver = React.useCallback(async () => {
-    try {
-      setLoading(true);
-      const [{ data: sess }, { data: list }] = await Promise.all([
-        supabase.auth.getSession(),
-        supabase
-          .from('profiles')
-          .select('id, name, gender, date_of_birth, bio, avatar_url, location, photos ( image_url )')
-          .order('created_at', { ascending: false })
-      ]);
-      const uid = sess.session?.user?.id || '';
-      setMyId(uid);
-      // refresh my gender
-      if (uid) {
-        try {
-          const { data: me } = await supabase
-            .from('profiles')
-            .select('gender')
-            .eq('id', uid)
-            .maybeSingle();
-          setMyGender(me?.gender ?? null);
-        } catch {}
-      }
-      const filteredList = (list as any[] | null)?.filter(p => p.id !== uid) || [];
-      setProfiles(shuffleArray(filteredList as Profile[]));
-    } catch (e) {
-      console.error('[Home] start over error', e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['left','right','bottom']}>
@@ -338,12 +358,13 @@ export default function HomeScreen() {
         <>
           <View style={styles.cardsContainer}>
             {filtered[0] && (
-              <Animated.View style={[styles.animatedCard, { transform: [{ translateX: translateCurrent }, { scale: scaleCurrent }], opacity: opacityCurrent }]}>
+              <View style={styles.profileCard}>
                 <ScrollView
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingVertical: 8 }}
                 >
                   <ProfileView
+                    key={filtered[0].id}
                     userId={filtered[0].id}
                     embedded
                     initialProfile={{
@@ -356,32 +377,10 @@ export default function HomeScreen() {
                       religion: null,
                     }}
                     initialPhotos={(filtered[0].photos || []).map((p, idx) => ({ id: idx, image_url: p.image_url }))}
+                    initialInterests={(filtered[0].user_interests || []).map((r: any) => r?.interests?.name).filter((n: any) => typeof n === 'string')}
                   />
                 </ScrollView>
-              </Animated.View>
-            )}
-            {filtered[1] && (
-              <Animated.View style={[styles.animatedCard, { transform: [{ translateX: translateNext }, { scale: scaleNext }], opacity: opacityNext }]}>
-                <ScrollView
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingVertical: 8 }}
-                >
-                  <ProfileView
-                    userId={filtered[1].id}
-                    embedded
-                    initialProfile={{
-                      id: filtered[1].id,
-                      name: filtered[1].name,
-                      bio: filtered[1].bio ?? null,
-                      gender: filtered[1].gender ?? null,
-                      date_of_birth: filtered[1].date_of_birth ?? null,
-                      location: filtered[1].location ?? null,
-                      religion: null,
-                    }}
-                    initialPhotos={(filtered[1].photos || []).map((p, idx) => ({ id: idx, image_url: p.image_url }))}
-                  />
-                </ScrollView>
-              </Animated.View>
+              </View>
             )}
           </View>
 
@@ -425,15 +424,6 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* Short loading overlay between profiles (1s) */}
-          {transitionLoading && (
-            <View style={styles.transitionOverlay}>
-              <View style={styles.transitionCard}>
-                <ActivityIndicator color={theme.accent} size="large" />
-                <Text style={[styles.transitionText, { color: theme.text }]}>Loading…</Text>
-              </View>
-            </View>
-          )}
         </>
       )}
     </SafeAreaView>
@@ -460,6 +450,10 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     left: 0,
+    width: screenWidth,
+  },
+  profileCard: {
+    flex: 1,
     width: screenWidth,
   },
   // The following styles were used by the old card body; we now rely on ProfileView's own layout.

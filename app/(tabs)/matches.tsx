@@ -26,7 +26,7 @@ export default function MatchesScreen() {
   const { currentUser, themeMode } = useStore();
   const [loading, setLoading] = React.useState(true);
   const [matches, setMatches] = React.useState<MatchRow[]>([]);
-  const [requests, setRequests] = React.useState<LikeRequestRow[]>([]);
+  const [requests, setRequests] = React.useState<(LikeRequestRow & { dir: 'in' | 'out' })[]>([]);
   const [actioningId, setActioningId] = React.useState<number | null>(null);
   const [actionType, setActionType] = React.useState<null | 'accept' | 'reject'>(null);
 
@@ -66,19 +66,27 @@ export default function MatchesScreen() {
         .select('id, user1_id, user2_id, created_at')
         .or(`user1_id.eq.${currentUser.id},user2_id.eq.${currentUser.id}`)
         .order('created_at', { ascending: false });
-      // incoming like requests
-      const { data: likeRows } = await supabase
+      // incoming like requests (others -> me)
+      const { data: likeRowsIn } = await supabase
         .from('likes')
         .select('id, liker_id, liked_id, created_at')
         .eq('liked_id', currentUser.id)
         .order('created_at', { ascending: false });
+      // outgoing like requests (me -> others)
+      const { data: likeRowsOut } = await supabase
+        .from('likes')
+        .select('id, liker_id, liked_id, created_at')
+        .eq('liker_id', currentUser.id)
+        .order('created_at', { ascending: false });
 
       // load other users' profiles for both lists in one query
       const matchOthers = (data || []).map(m => (m.user1_id === currentUser.id ? m.user2_id : m.user1_id));
-      const requestOthers = (likeRows || []).map(l => l.liker_id);
-      const others = Array.from(new Set([...
-        matchOthers,
+      const requestOthers = (likeRowsIn || []).map(l => l.liker_id);
+      const requestedOthers = (likeRowsOut || []).map(l => l.liked_id);
+      const others = Array.from(new Set([
+        ...matchOthers,
         ...requestOthers,
+        ...requestedOthers,
       ]));
       let profiles: Record<string, { id: string; name?: string; avatar_url?: string | null }> = {};
       if (others.length) {
@@ -112,17 +120,41 @@ export default function MatchesScreen() {
         })) as MatchRow[];
         setMatches(enriched);
       }
-      const enrichedReqs = (likeRows as any[] | null)?.map(l => ({
-        ...l,
-        other: profiles[l.liker_id],
-      })) as LikeRequestRow[] | undefined;
-      setRequests(enrichedReqs || []);
+      const enrichedIncoming = (likeRowsIn as any[] | null)?.map(l => ({
+        ...(l as any),
+        other: profiles[(l as any).liker_id],
+        dir: 'in' as const,
+      })) || [];
+      const enrichedOutgoing = (likeRowsOut as any[] | null)?.map(l => ({
+        ...(l as any),
+        other: profiles[(l as any).liked_id],
+        dir: 'out' as const,
+      })) || [];
+      setRequests([...
+        enrichedIncoming,
+        ...enrichedOutgoing,
+      ]);
     } finally {
       setLoading(false);
     }
   }, [currentUser?.id]);
 
   React.useEffect(() => { load(); }, [load]);
+
+  // Realtime updates for matches and like requests and profile/avatar changes
+  React.useEffect(() => {
+    if (!currentUser?.id) return;
+    const uid = currentUser.id;
+    const channel = supabase
+      .channel(`realtime-matches-${uid}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes', filter: `liked_id=eq.${uid}` }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes', filter: `liker_id=eq.${uid}` }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'photos' }, () => load())
+      .subscribe();
+    return () => { try { channel.unsubscribe(); } catch {} };
+  }, [currentUser?.id, load]);
 
   const acceptRequest = async (like: LikeRequestRow) => {
     if (!currentUser?.id) return;
@@ -145,6 +177,8 @@ export default function MatchesScreen() {
       // refresh lists locally
       setRequests(prev => prev.filter(r => r.id !== like.id));
       await load();
+      // Navigate to chat tab so the new match appears immediately
+      router.push('/(tabs)/chat' as any);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Failed to accept request.');
     } finally {
@@ -200,26 +234,36 @@ export default function MatchesScreen() {
                   )}
                   <TouchableOpacity style={{ flex: 1 }} onPress={() => router.push(`/profile/${r.other?.id}` as any)}>
                     <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>{r.other?.name || 'Someone'}</Text>
-                    <Text style={[styles.sub, { color: theme.sub }]} numberOfLines={1}>Requested on {new Date(r.created_at).toLocaleDateString()}</Text>
+                    <Text style={[styles.sub, { color: theme.sub }]} numberOfLines={1}>{r.dir === 'in' ? 'Requested on ' : 'You requested on '}{new Date(r.created_at).toLocaleDateString()}</Text>
                   </TouchableOpacity>
                   <View style={styles.actions}>
-                    {!(actioningId === r.id && actionType === 'accept') && (
-                      <TouchableOpacity style={[styles.smallBtn, { borderColor: theme.border }]} onPress={() => rejectRequest(r)} disabled={actioningId === r.id} accessibilityLabel="Reject">
-                        {actioningId === r.id && actionType === 'reject' ? (
-                          <ActivityIndicator size="small" />
-                        ) : (
-                          <Ionicons name="close" size={16} color={theme.muted} />
+                    {r.dir === 'out' ? (
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <View style={[styles.pill, { backgroundColor: theme.accentSubtle, borderColor: theme.border }]}> 
+                          <Text style={[styles.pillText, { color: theme.accent }]}>Requested</Text>
+                        </View>
+                      </View>
+                    ) : (
+                      <>
+                        {!(actioningId === r.id && actionType === 'accept') && (
+                          <TouchableOpacity style={[styles.smallBtn, { borderColor: theme.border }]} onPress={() => rejectRequest(r)} disabled={actioningId === r.id} accessibilityLabel="Reject">
+                            {actioningId === r.id && actionType === 'reject' ? (
+                              <ActivityIndicator size="small" />
+                            ) : (
+                              <Ionicons name="close" size={16} color={theme.muted} />
+                            )}
+                          </TouchableOpacity>
                         )}
-                      </TouchableOpacity>
-                    )}
-                    {!(actioningId === r.id && actionType === 'reject') && (
-                      <TouchableOpacity style={[styles.smallBtn, { borderColor: theme.border }]} onPress={() => acceptRequest(r)} disabled={actioningId === r.id} accessibilityLabel="Accept">
-                        {actioningId === r.id && actionType === 'accept' ? (
-                          <ActivityIndicator size="small" />
-                        ) : (
-                          <Ionicons name="checkmark" size={16} color={theme.accent} />
+                        {!(actioningId === r.id && actionType === 'reject') && (
+                          <TouchableOpacity style={[styles.smallBtn, { borderColor: theme.border }]} onPress={() => acceptRequest(r)} disabled={actioningId === r.id} accessibilityLabel="Accept">
+                            {actioningId === r.id && actionType === 'accept' ? (
+                              <ActivityIndicator size="small" />
+                            ) : (
+                              <Ionicons name="checkmark" size={16} color={theme.accent} />
+                            )}
+                          </TouchableOpacity>
                         )}
-                      </TouchableOpacity>
+                      </>
                     )}
                   </View>
                 </View>
@@ -244,6 +288,11 @@ export default function MatchesScreen() {
               <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>{item.other?.name || 'Match'}</Text>
               <Text style={[styles.sub, { color: theme.sub }]} numberOfLines={1}>Matched on {new Date(item.created_at).toLocaleDateString()}</Text>
             </TouchableOpacity>
+            <View style={styles.actions}>
+              <TouchableOpacity style={[styles.smallBtn, { borderColor: theme.border }]} onPress={() => router.push('/(tabs)/chat' as any)} accessibilityLabel="Open chat tab">
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color={theme.accent} />
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       />
@@ -267,4 +316,6 @@ const styles = StyleSheet.create({
   likeName: { fontWeight: '700', marginBottom: 6 },
   likeBtn: { borderWidth: 1, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12 },
   likeBtnText: { fontWeight: '800' },
+  pill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  pillText: { fontWeight: '800', fontSize: 12 },
 });

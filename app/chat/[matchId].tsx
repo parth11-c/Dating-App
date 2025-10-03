@@ -30,6 +30,10 @@ export default function ChatByMatchScreen() {
   const [peerTyping, setPeerTyping] = React.useState(false);
   const typingTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const messageIdsRef = React.useRef<Set<string>>(new Set());
+  const presenceChannelRef = React.useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const pollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const initialLoadedRef = React.useRef(false);
+  const shouldScrollRef = React.useRef(false);
 
   const myId = currentUser.id;
   const ready = !!myId && Number.isFinite(matchId);
@@ -96,11 +100,41 @@ export default function ChatByMatchScreen() {
     if (!error && data) {
       setMessages(data as ChatMessage[]);
       messageIdsRef.current = new Set((data as any[]).map((m: any) => m.id));
+      shouldScrollRef.current = true;
+      initialLoadedRef.current = true;
     }
     setLoading(false);
   }, [ready, matchId]);
 
   React.useEffect(() => { loadMessages(); }, [loadMessages]);
+
+  // Fallback: periodic polling to guarantee near-realtime even if DB realtime is disabled
+  React.useEffect(() => {
+    if (!ready) return;
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    // silent refresh without toggling loading to avoid flicker
+    const refresh = async () => {
+      if (!initialLoadedRef.current) return; // before initial load, let loadMessages handle it
+      const { data, error } = await supabase
+        .from('messages')
+        .select('id, match_id, sender_id, body, created_at')
+        .eq('match_id', matchId)
+        .order('created_at', { ascending: true });
+      if (!error && data) {
+        const incoming = data as ChatMessage[];
+        // Only update if different length or newest id changed
+        const prevLast = messages[messages.length - 1]?.id;
+        const nextLast = incoming[incoming.length - 1]?.id;
+        if (incoming.length !== messages.length || prevLast !== nextLast) {
+          setMessages(incoming);
+          messageIdsRef.current = new Set(incoming.map(m => m.id));
+          shouldScrollRef.current = true;
+        }
+      }
+    };
+    pollTimerRef.current = setInterval(() => { refresh(); }, 4000);
+    return () => { if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; } };
+  }, [ready, matchId, messages]);
 
   React.useEffect(() => {
     if (!ready) return;
@@ -110,7 +144,8 @@ export default function ChatByMatchScreen() {
         const msg = payload.new as ChatMessage;
         if (!messageIdsRef.current.has(msg.id)) {
           messageIdsRef.current.add(msg.id);
-          setMessages(prev => [...prev, msg]);
+          setMessages(prev => { const next = [...prev, msg]; return next; });
+          shouldScrollRef.current = true;
         }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `match_id=eq.${matchId}` }, (payload: any) => {
@@ -130,6 +165,8 @@ export default function ChatByMatchScreen() {
     const channel = supabase.channel(`chat-meta-${pairKey}`, {
       config: { presence: { key: myId } }
     });
+
+    presenceChannelRef.current = channel;
 
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState<{ user_id: string }>();
@@ -151,24 +188,24 @@ export default function ChatByMatchScreen() {
       }
     });
 
-    return () => { channel.unsubscribe(); };
+    return () => {
+      try { channel.unsubscribe(); } catch {}
+      presenceChannelRef.current = null;
+    };
   }, [ready, peer?.id, myId]);
 
   // Emit typing events when user types
   const notifyTyping = React.useMemo(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
-    return (val: string) => {
+    return (_val: string) => {
       if (!ready || !peer?.id) return;
-      const otherId = peer.id;
-      const pairKey = myId < otherId ? `${myId}-${otherId}` : `${otherId}-${myId}`;
-      const channel = supabase.channel(`chat-meta-${pairKey}`);
-      // fire and forget broadcast (short lived channel instance)
-      channel.subscribe(() => {
+      const channel = presenceChannelRef.current;
+      if (!channel) return;
+      try {
         channel.send({ type: 'broadcast', event: 'typing', payload: { from: myId, typing: true } });
-        setTimeout(() => channel.unsubscribe(), 2000);
-      });
+      } catch {}
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => { /* stop indicator auto clears on receiver */ }, 1200);
+      timer = setTimeout(() => { /* auto-clear handled on receiver */ }, 1200);
     };
   }, [ready, peer?.id, myId]);
 
@@ -176,6 +213,13 @@ export default function ChatByMatchScreen() {
     const body = input.trim();
     if (!body || !ready) return;
     setSending(true);
+    // optimistic message
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+    const optimistic: ChatMessage = { id: tempId, match_id: matchId, sender_id: myId, body, created_at: new Date().toISOString() } as any;
+    messageIdsRef.current.add(tempId);
+    setMessages(prev => [...prev, optimistic]);
+    setInput('');
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
     try {
       const { data: inserted, error } = await supabase
         .from('messages')
@@ -183,12 +227,18 @@ export default function ChatByMatchScreen() {
         .select('id, match_id, sender_id, body, created_at')
         .single();
       if (!error && inserted) {
-        if (!messageIdsRef.current.has((inserted as any).id)) {
-          messageIdsRef.current.add((inserted as any).id);
-          setMessages(prev => [...prev, inserted as any]);
-        }
-        setInput('');
+        const real = inserted as ChatMessage;
+        setMessages(prev => prev.map(m => (m.id === tempId ? real : m)));
+        messageIdsRef.current.delete(tempId);
+        messageIdsRef.current.add(real.id);
+      } else {
+        // revert optimistic
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+        messageIdsRef.current.delete(tempId);
       }
+    } catch {
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+      messageIdsRef.current.delete(tempId);
     } finally {
       setSending(false);
     }
@@ -257,8 +307,8 @@ export default function ChatByMatchScreen() {
             renderItem={renderItem}
             keyExtractor={(m) => m.id}
             contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 12 }]}
-            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
-            onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
+            onContentSizeChange={() => { if (shouldScrollRef.current) { listRef.current?.scrollToEnd({ animated: true }); shouldScrollRef.current = false; } }}
+            onLayout={() => { if (shouldScrollRef.current) { listRef.current?.scrollToEnd({ animated: false }); shouldScrollRef.current = false; } }}
           />
         )}
         <View style={[styles.inputBar, { paddingBottom: insets.bottom > 0 ? 8 : 12, borderTopColor: theme.barBorder }]}> 

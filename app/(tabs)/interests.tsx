@@ -19,7 +19,7 @@ type Candidate = {
   date_of_birth?: string | null;
   avatar_url?: string | null;
   location?: string | null;
-  photos?: { image_url: string }[];
+  photos?: { id?: number; image_url: string; position?: number | null; created_at?: string | null }[];
   user_interests?: { interest_id: number }[];
 };
 
@@ -98,7 +98,7 @@ export default function InterestsScreen() {
       // Apply preferred gender filter if set
       let query = supabase
         .from('profiles')
-        .select('id, name, bio, gender, preferred_gender, date_of_birth, avatar_url, location, photos ( image_url ), user_interests ( interest_id )')
+        .select('id, name, bio, gender, preferred_gender, date_of_birth, avatar_url, location, photos ( id, image_url, position, created_at ), user_interests ( interest_id )')
         .neq('id', currentUser.id);
 
       const pref = myProfile?.preferred_gender || null;
@@ -106,14 +106,36 @@ export default function InterestsScreen() {
         query = query.eq('gender', pref);
       }
 
-      const { data: rows } = await query.order('created_at', { ascending: false });
+      const { data: rows } = await query
+        .order('position', { ascending: true, foreignTable: 'photos', nullsFirst: false })
+        .order('created_at', { ascending: false, foreignTable: 'photos' })
+        .order('created_at', { ascending: false });
       const candidates: Candidate[] = (rows as any[]) || [];
+
+      // Normalize photo order client-side as a fallback
+      const normalized: Candidate[] = candidates.map((p: any) => ({
+        ...p,
+        photos: (p.photos || []).slice().sort((a: any, b: any) => {
+          const ap = Number.isFinite(a?.position) ? Number(a.position) : undefined;
+          const bp = Number.isFinite(b?.position) ? Number(b.position) : undefined;
+          if (typeof ap === 'number' && typeof bp === 'number') {
+            if (ap !== bp) return ap - bp;
+          } else if (typeof ap === 'number') {
+            return -1;
+          } else if (typeof bp === 'number') {
+            return 1;
+          }
+          const at = a?.created_at ? new Date(a.created_at).getTime() : 0;
+          const bt = b?.created_at ? new Date(b.created_at).getTime() : 0;
+          return bt - at;
+        }),
+      }));
 
       const myInterestIds = selected;
       const myGender = myProfile?.gender || null;
       const myLoc = (myProfile?.location || '')?.trim().toLowerCase();
 
-       const scored = candidates
+       const scored = normalized
         .filter(p => {
            if (p.preferred_gender && p.preferred_gender !== 'everyone') {
             if (!myGender) return false;
@@ -155,6 +177,19 @@ export default function InterestsScreen() {
     try {
       if (!currentUser?.id || likingId) return;
       setLikingId(otherId);
+      // If already matched, do not send request again; subtle notice and go to Matches
+      const a = currentUser.id < otherId ? currentUser.id : otherId;
+      const b = currentUser.id < otherId ? otherId : currentUser.id;
+      const { data: existingMatch } = await supabase
+        .from('matches')
+        .select('id')
+        .or(`and(user1_id.eq.${a},user2_id.eq.${b}),and(user1_id.eq.${b},user2_id.eq.${a})`)
+        .maybeSingle();
+      if (existingMatch) {
+        try { alert('Already a match'); } catch {}
+        router.push('/(tabs)/matches' as any);
+        return;
+      }
       // Insert like (request-only UX); do not auto-create match
       const { error } = await supabase.from('likes').insert({ liker_id: currentUser.id, liked_id: otherId });
       if (error) return;
